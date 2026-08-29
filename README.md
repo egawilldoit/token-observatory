@@ -17,7 +17,9 @@ consumption across several development machines without double-counting overlapp
 - Validate calendar dates and require per-agent totals to reconcile with ccusage's
   day-level total before promotion.
 - Compare each machine × agent × date with the current accepted observation.
-- Insert only new/revised observation versions.
+- Insert immutable new/revised/removal observation versions, including tombstones
+  when an agent disappears from a covered day.
+- Keep revision identity per import so a state can safely change A → B → A.
 - Derive the dashboard exclusively from the latest processed observation.
 - Recommend the next collection command with a three-day overlap.
 - Restrict server-side telemetry access to an explicit email allowlist.

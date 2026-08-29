@@ -86,8 +86,16 @@ create table if not exists public.daily_usage_observations (
       and reported_cost_usd is null
     )
   ),
-  unique(machine_id, agent, usage_date, usage_hash)
+  unique(import_id, agent, usage_date)
 );
+
+create index if not exists daily_usage_content_hash_idx
+  on public.daily_usage_observations(
+    machine_id,
+    agent,
+    usage_date,
+    usage_hash
+  );
 
 create index if not exists daily_usage_machine_date_idx
   on public.daily_usage_observations(machine_id, usage_date desc);
@@ -213,7 +221,7 @@ begin
     is_tombstone boolean,
     usage_hash text
   )
-  on conflict (machine_id, agent, usage_date, usage_hash) do nothing;
+  on conflict (import_id, agent, usage_date) do nothing;
 
   get diagnostics v_inserted = row_count;
 

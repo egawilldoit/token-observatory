@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import { diffDailyUsage } from "../lib/ccusage/diff";
 import { parseCcusageDaily } from "../lib/ccusage/parser";
@@ -126,4 +127,22 @@ test("cost-only changes create a new observation version", () => {
 
   assert.equal(result.revisedRows.length, 1);
   assert.equal(result.netChange, 0);
+});
+
+
+test("database revision identity is per import, not per content hash", async () => {
+  const migration = await readFile(
+    new URL("../supabase/migrations/20260829_001_ccusage_v1.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /unique\(import_id, agent, usage_date\)/);
+  assert.match(
+    migration,
+    /on conflict \(import_id, agent, usage_date\) do nothing/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /unique\(machine_id, agent, usage_date, usage_hash\)/,
+  );
 });

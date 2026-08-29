@@ -113,7 +113,7 @@ export async function POST(request: Request) {
 
   const { data: existing, error: existingError } = await supabase
     .from("imports")
-    .select("id,machine_id,scope_end")
+    .select("id,machine_id,scope_end,status")
     .eq("machine_id", machineId)
     .eq("raw_sha256", rawSha)
     .in("status", ["processing", "processed"])
@@ -125,7 +125,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: existingError.message }, { status: 500 });
   }
 
-  if (existing) {
+  if (existing?.status === "processing") {
+    return NextResponse.json(
+      {
+        error: "This exact dataset is already processing for this machine.",
+        importId: existing.id,
+      },
+      { status: 409 },
+    );
+  }
+
+  if (existing?.status === "processed") {
     const duplicateId = randomUUID();
     const { error: duplicateAuditError } = await supabase.from("imports").insert({
       id: duplicateId,

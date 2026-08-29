@@ -33,12 +33,17 @@ Weekly, monthly, and lifetime totals are derived from that current daily view.
 9. The parser normalizes nested `agents[]` into daily rows, validates real
    calendar dates, and requires agent totals to reconcile with the day's reported
    total.
-10. Each row receives a deterministic usage hash that excludes cost.
-11. Rows are classified as new, revised, or unchanged against
-    `v_current_daily_usage`.
-12. One Postgres RPC inserts new/revised observations and marks the import
+10. Each row receives a deterministic content fingerprint covering token
+    counters, reported cost, and tombstone state.
+11. Rows are classified as new, revised, removed, or unchanged against
+    `v_current_daily_usage`. Removed agents on covered days receive immutable
+    tombstone revisions.
+12. Revision identity is `import × agent × usage_date`, not the content hash.
+    This deliberately supports state reversion such as A → B → A.
+13. One Postgres RPC inserts changed/tombstone observations and marks the import
     processed atomically.
-13. The dashboard reads only `v_current_daily_usage`.
+14. The dashboard reads only the latest non-tombstone revision from
+    `v_current_daily_usage`.
 
 ## Overlap collection
 
@@ -63,8 +68,8 @@ machine identity remains part of canonical truth.
 
 ## Cost
 
-`reported_cost_usd` is informational ccusage output. Usage identity deliberately
-excludes cost because pricing can change while token usage does not. V1 does not
+`reported_cost_usd` is informational ccusage output. The observation fingerprint includes reported cost, so a pricing-only change can
+become the current reported estimate without changing token totals. V1 does not
 treat ccusage estimated cost as an invoice.
 
 ## Security
@@ -84,7 +89,8 @@ an open redirect.
 
 - Invalid JSON, impossible dates, malformed token counts, missing agent identity, or
   agent/day reconciliation failures are rejected before DB promotion.
-- Same-machine exact duplicate raw datasets are audit-recorded but never promoted twice.
+- A same-machine exact dataset already in `processing` returns HTTP 409; a
+  processed exact duplicate is audit-recorded but never promoted twice.
 - Same-machine concurrency is rejected with HTTP 409.
 - Stale processing rows are recovered as failed.
 - Storage or database-promotion failures mark the import failed; failed imports are
