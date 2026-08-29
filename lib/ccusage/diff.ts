@@ -34,6 +34,10 @@ function tombstoneFor(
 export function diffDailyUsage(
   incoming: DailyUsageObservationInput[],
   current: CurrentDailyUsageRow[],
+  coverage?: {
+    scopeStart?: string | null;
+    scopeEnd?: string | null;
+  },
 ): DiffSummary {
   const currentByKey = new Map(
     current.map((row) => [keyOf(row), row] as const),
@@ -43,8 +47,10 @@ export function diffDailyUsage(
   );
   const incomingKeys = new Set(incoming.map(keyOf));
   const incomingDates = incoming.map((row) => row.usage_date).sort();
-  const scopeStart = incomingDates[0] ?? null;
-  const scopeEnd = incomingDates[incomingDates.length - 1] ?? null;
+  const observedScopeStart = incomingDates[0] ?? null;
+  const observedScopeEnd = incomingDates[incomingDates.length - 1] ?? null;
+  const scopeStart = coverage?.scopeStart ?? observedScopeStart;
+  const scopeEnd = coverage?.scopeEnd ?? observedScopeEnd;
 
   const newRows: DailyUsageObservationInput[] = [];
   const revisedRows: DailyUsageObservationInput[] = [];
