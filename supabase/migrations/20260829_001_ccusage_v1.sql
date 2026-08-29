@@ -154,6 +154,17 @@ from ranked
 where revision_rank = 1
   and not is_tombstone;
 
+create or replace view public.v_machine_collection_state
+with (security_invoker = true)
+as
+select
+  m.id as machine_id,
+  max(i.scope_end) filter (where i.status = 'processed') as last_scope_end
+from public.machines m
+left join public.imports i on i.machine_id = m.id
+where m.is_active
+group by m.id;
+
 create or replace function public.process_ccusage_import(
   p_import_id uuid,
   p_rows jsonb,
@@ -248,6 +259,7 @@ revoke all on table public.machines from anon, authenticated;
 revoke all on table public.imports from anon, authenticated;
 revoke all on table public.daily_usage_observations from anon, authenticated;
 revoke all on table public.v_current_daily_usage from anon, authenticated;
+revoke all on table public.v_machine_collection_state from anon, authenticated;
 revoke all on function public.process_ccusage_import(uuid, jsonb, jsonb)
   from public, anon, authenticated;
 
@@ -255,6 +267,7 @@ grant all on table public.machines to service_role;
 grant all on table public.imports to service_role;
 grant all on table public.daily_usage_observations to service_role;
 grant select on table public.v_current_daily_usage to service_role;
+grant select on table public.v_machine_collection_state to service_role;
 grant execute on function public.process_ccusage_import(uuid, jsonb, jsonb)
   to service_role;
 
