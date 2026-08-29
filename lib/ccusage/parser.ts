@@ -172,7 +172,13 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
       agentRows.push(day);
     }
 
-    let agentTotal = 0;
+    const agentSums = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      totalTokens: 0,
+    };
 
     for (const agentRow of agentRows) {
       const agent = normalizedAgent(agentRow.agent);
@@ -193,20 +199,34 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
       }
 
       observations.set(key, observation);
-      agentTotal += observation.reported_total_tokens;
+      agentSums.inputTokens += observation.input_tokens;
+      agentSums.outputTokens += observation.output_tokens;
+      agentSums.cacheReadTokens += observation.cache_read_tokens;
+      agentSums.cacheCreationTokens += observation.cache_creation_tokens;
+      agentSums.totalTokens += observation.reported_total_tokens;
     }
 
-    const dayTotal = requiredToken(day, "totalTokens", "day " + usageDate);
-    if (agentTotal !== dayTotal) {
-      throw new Error(
-        "Per-agent totals do not reconcile with the day total on " +
-          usageDate +
-          ": agents=" +
-          agentTotal +
-          ", day=" +
-          dayTotal +
-          ".",
-      );
+    for (const key of [
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheCreationTokens",
+      "totalTokens",
+    ] as const) {
+      const dayValue = requiredToken(day, key, "day " + usageDate);
+      if (agentSums[key] !== dayValue) {
+        throw new Error(
+          "Per-agent " +
+            key +
+            " do not reconcile with the day value on " +
+            usageDate +
+            ": agents=" +
+            agentSums[key] +
+            ", day=" +
+            dayValue +
+            ".",
+        );
+      }
     }
   }
 

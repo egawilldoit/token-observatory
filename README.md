@@ -14,8 +14,8 @@ consumption across several development machines without double-counting overlapp
   the same underlying usage event.
 - Permit only one active import per machine; stale processing imports are recovered
   automatically.
-- Validate calendar dates and require per-agent totals to reconcile with ccusage's
-  day-level total before promotion.
+- Validate calendar dates and require every per-agent token category to reconcile
+  with ccusage's day-level counters before promotion.
 - Compare each machine × agent × date with the current accepted observation.
 - Insert immutable new/revised/removal observation versions, including tombstones
   when an agent disappears from a covered day.

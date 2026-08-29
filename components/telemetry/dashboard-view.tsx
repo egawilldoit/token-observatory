@@ -170,7 +170,7 @@ export function DashboardView({
             Global telemetry
           </p>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] md:text-4xl">
-            Token burn, without double counting.
+            Token burn, without snapshot inflation.
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
             Current daily truth across every accepted ccusage import. Filters never

@@ -31,8 +31,8 @@ Weekly, monthly, and lifetime totals are derived from that current daily view.
    machine, preventing concurrent snapshots from racing "latest wins".
 8. Raw non-duplicate files are stored immutably in private `raw-imports` Storage.
 9. The parser normalizes nested `agents[]` into daily rows, validates real
-   calendar dates, and requires agent totals to reconcile with the day's reported
-   total.
+   calendar dates, and requires every agent token category (input, output, cache
+   read, cache creation, and total) to reconcile with the day-level values.
 10. Each row receives a deterministic content fingerprint covering token
     counters, reported cost, and tombstone state.
 11. Rows are classified as new, revised, removed, or unchanged against

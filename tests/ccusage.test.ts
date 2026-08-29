@@ -15,6 +15,10 @@ function fixture(total = 300) {
     daily: [
       {
         period: "2026-08-28",
+        inputTokens: 90,
+        outputTokens: 30,
+        cacheReadTokens: 180,
+        cacheCreationTokens: 0,
         totalTokens: total,
         agents: [
           {
@@ -145,4 +149,22 @@ test("database revision identity is per import, not per content hash", async () 
     migration,
     /unique\(machine_id, agent, usage_date, usage_hash\)/,
   );
+});
+
+
+test("rejects category totals that do not reconcile to agent rows", () => {
+  const payload = fixture();
+  payload.daily[0].cacheReadTokens = 181;
+
+  assert.throws(
+    () => parseCcusageDaily(payload),
+    /cacheReadTokens do not reconcile/,
+  );
+});
+
+test("rejects missing required token counters", () => {
+  const payload = fixture();
+  Reflect.deleteProperty(payload.daily[0].agents[0], "inputTokens");
+
+  assert.throws(() => parseCcusageDaily(payload), /Invalid inputTokens/);
 });
