@@ -27,6 +27,11 @@ export type ImportRow = {
   processed_at: string | null;
 };
 
+type MachineCollectionStateRow = {
+  machine_id: string;
+  last_scope_end: string | null;
+};
+
 export async function getMachines(): Promise<MachineRow[]> {
   if (!isTelemetryConfigured()) return [];
   const supabase = createAdminClient();
@@ -67,22 +72,30 @@ export async function getRecentImports(limit = 20): Promise<ImportRow[]> {
   return (data ?? []) as ImportRow[];
 }
 
+async function getMachineCollectionState(): Promise<MachineCollectionStateRow[]> {
+  if (!isTelemetryConfigured()) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("v_machine_collection_state")
+    .select("machine_id,last_scope_end");
+
+  if (error) throw error;
+  return (data ?? []) as MachineCollectionStateRow[];
+}
+
 export async function getMachineCollectionHints() {
-  const [machines, rows] = await Promise.all([
+  const [machines, stateRows] = await Promise.all([
     getMachines(),
-    getCurrentDailyUsage(),
+    getMachineCollectionState(),
   ]);
 
-  const latest = new Map<string, string>();
-  for (const row of rows) {
-    const previous = latest.get(row.machine_id);
-    if (!previous || row.usage_date > previous) {
-      latest.set(row.machine_id, row.usage_date);
-    }
-  }
+  const lastScopeEndByMachine = new Map(
+    stateRows.map((row) => [row.machine_id, row.last_scope_end] as const),
+  );
 
   return machines.map((machine) => {
-    const lastDate = latest.get(machine.id) ?? null;
+    const lastDate = lastScopeEndByMachine.get(machine.id) ?? null;
     const since = nextSinceFromDate(lastDate);
     return {
       ...machine,
