@@ -267,3 +267,14 @@ test("tombstones a missing leading day when the server overlap starts earlier th
   assert.equal(result.removedRows[0].usage_date, "2026-08-26");
   assert.equal(result.netChange, -100);
 });
+
+
+test("rejects oversized or control-character agent identifiers", () => {
+  const oversized = fixture();
+  oversized.daily[0].agents[0].agent = "a".repeat(129);
+  assert.throws(() => parseCcusageDaily(oversized), /missing a valid agent/);
+
+  const controlled = fixture();
+  controlled.daily[0].agents[0].agent = "codex\u0000hidden";
+  assert.throws(() => parseCcusageDaily(controlled), /missing a valid agent/);
+});
