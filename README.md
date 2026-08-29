@@ -14,14 +14,16 @@ consumption across several development machines without double-counting overlapp
   the same underlying usage event.
 - Permit only one active import per machine; stale processing imports are recovered
   automatically.
-- Validate calendar dates and require every per-agent token category to reconcile
-  with ccusage's day-level counters before promotion.
+- Strictly decode UTF-8, reject future-dated telemetry, and require every per-agent
+  token category plus ccusage's top-level daily totals to reconcile before promotion.
 - Compare each machine × agent × date with the current accepted observation.
 - Insert immutable new/revised/removal observation versions, including tombstones
-  when an agent disappears from a covered day.
+  when an agent or an entire previously-observed day disappears inside the covered
+  overlap.
 - Keep revision identity per import so a state can safely change A → B → A.
 - Derive the dashboard exclusively from the latest processed observation.
-- Recommend the next collection command with a three-day overlap.
+- Recommend the next collection command from the latest processed import scope,
+  with a three-day overlap.
 - Restrict server-side telemetry access to an explicit email allowlist.
 
 ## Supported collection contract
@@ -58,12 +60,19 @@ The migration creates:
 - `imports`
 - `daily_usage_observations`
 - `v_current_daily_usage`
+- `v_machine_collection_state`
 - `process_ccusage_import(...)`
 - private Storage bucket `raw-imports`
 - per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.
+Mutation APIs distinguish 401/403, reject cross-site browser requests, and bound
+request/file metadata before parsing.
+
+Direct dependency versions and CI actions are pinned to reviewed versions/commit
+SHAs. Next.js responses disable the powered-by header and apply baseline frame,
+content-type, referrer, opener, permissions, and CSP restrictions.
 
 ## Development
 
