@@ -58,3 +58,38 @@ test("Sec-Fetch-Site cross-site is rejected even without Origin", () => {
 
   assert.equal(isCrossOriginRequest(request), true);
 });
+
+
+test("Vercel forwarded host is authoritative for same-origin mutations", () => {
+  const request = new Request(
+    "https://token-observatory-git-main-example.vercel.app/api/imports",
+    {
+      method: "POST",
+      headers: {
+        origin: "https://token-observatory.vercel.app",
+        host: "token-observatory-git-main-example.vercel.app",
+        "x-forwarded-host": "token-observatory.vercel.app",
+        "x-forwarded-proto": "https",
+        "sec-fetch-site": "same-origin",
+      },
+    },
+  );
+
+  assert.equal(isCrossOriginRequest(request), false);
+});
+
+test("forwarded public host still rejects a foreign origin", () => {
+  const request = new Request(
+    "https://token-observatory-git-main-example.vercel.app/api/imports",
+    {
+      method: "POST",
+      headers: {
+        origin: "https://evil.example",
+        "x-forwarded-host": "token-observatory.vercel.app",
+        "x-forwarded-proto": "https",
+      },
+    },
+  );
+
+  assert.equal(isCrossOriginRequest(request), true);
+});

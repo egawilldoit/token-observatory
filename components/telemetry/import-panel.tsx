@@ -8,7 +8,7 @@ import {
   Terminal,
   UploadCloud,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type MachineHint = {
@@ -22,6 +22,7 @@ type MachineHint = {
 type ImportResponse = {
   status: "processed" | "exact_duplicate";
   importId: string;
+  requestId?: string;
   duplicateOfImportId?: string;
   duplicateOfMachineId?: string;
   crossMachineMatch?: boolean;
@@ -53,48 +54,125 @@ function compact(value: number) {
   return value.toLocaleString();
 }
 
+async function readJsonResponse(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    throw new Error("Import returned an empty response (HTTP " + response.status + ").");
+  }
+
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    throw new Error(
+      "Import returned a non-JSON response (HTTP " +
+        response.status +
+        "). Please check Vercel logs.",
+    );
+  }
+}
+
 export function ImportPanel({ machines }: { machines: MachineHint[] }) {
   const router = useRouter();
-  const [machineId, setMachineId] = useState(machines[0]?.id ?? "");
+  const [machineId, setMachineId] = useState(() => machines[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const selected = useMemo(
-    () => machines.find((machine) => machine.id === machineId) ?? null,
-    [machineId, machines],
-  );
+  const selected = useMemo(() => {
+    return (
+      machines.find((machine) => machine.id === machineId) ??
+      machines[0] ??
+      null
+    );
+  }, [machineId, machines]);
+
+  const effectiveMachineId = selected?.id ?? "";
+
+  useEffect(() => {
+    if (selected && machineId !== selected.id) {
+      setMachineId(selected.id);
+    }
+  }, [machineId, selected]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file || !machineId || !selected) return;
+
+    if (!file) {
+      setError("Choose a ccusage JSON file before importing.");
+      return;
+    }
+
+    if (!selected || !effectiveMachineId) {
+      setError("No valid machine is selected. Reload the page and try again.");
+      return;
+    }
 
     setBusy(true);
+    setStatusText("Uploading " + (file.size / 1024 / 1024).toFixed(2) + " MB…");
     setError(null);
     setResult(null);
 
+    const requestId = crypto.randomUUID();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 90_000);
+
     try {
       const form = new FormData();
-      form.set("machine_id", machineId);
+      form.set("machine_id", effectiveMachineId);
       form.set("file", file);
-      form.set("command_used", selected.command);
+      form.set("command_used", selected.command ?? "");
 
       const response = await fetch("/api/imports", {
         method: "POST",
         body: form,
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "X-Observatory-Request-Id": requestId,
+        },
       });
-      const payload = await response.json();
+
+      setStatusText("Processing server response…");
+      const payload = await readJsonResponse(response);
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Import failed.");
+        const message =
+          typeof payload.error === "string" ? payload.error : "Import failed.";
+        const responseRequestId =
+          typeof payload.requestId === "string" ? payload.requestId : requestId;
+
+        throw new Error(
+          message +
+            " (HTTP " +
+            response.status +
+            ", request " +
+            responseRequestId +
+            ")",
+        );
       }
 
       setResult(payload as ImportResponse);
+      setFile(null);
+      setStatusText(null);
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Import failed.");
+      if (caught instanceof DOMException && caught.name === "AbortError") {
+        setError(
+          "Import timed out after 90 seconds. Request ID: " +
+            requestId +
+            ". Check Vercel logs before retrying.",
+        );
+      } else {
+        setError(caught instanceof Error ? caught.message : "Import failed.");
+      }
+      setStatusText(null);
     } finally {
+      window.clearTimeout(timeout);
       setBusy(false);
     }
   }
@@ -134,10 +212,11 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         <label className="mt-6 block text-xs font-medium text-slate-400">
           Machine
           <select
-            value={machineId}
+            value={effectiveMachineId}
             onChange={(event) => {
               setMachineId(event.target.value);
               setResult(null);
+              setError(null);
             }}
             className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0a1620] px-3 text-sm text-slate-200 outline-none ring-cyan-400 focus:ring-1"
           >
@@ -169,6 +248,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null);
                 setResult(null);
+                setError(null);
               }}
             />
           </span>
@@ -176,13 +256,13 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
         <button
           type="submit"
-          disabled={!file || busy}
+          disabled={!file || !selected || !effectiveMachineId || busy}
           className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Processing snapshot
+              {statusText ?? "Processing snapshot…"}
             </>
           ) : (
             "Import and deduplicate"
@@ -192,7 +272,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         {error ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.07] p-3 text-sm text-red-200"
+            className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.07] p-3 text-sm leading-5 text-red-200"
           >
             {error}
           </div>
@@ -213,7 +293,8 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
             </div>
           </div>
           <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-slate-300">
-            {selected?.command}
+            {selected?.command ||
+              "Collection command unavailable — reload after selecting a machine."}
           </pre>
           {selected?.lastAcceptedScopeEnd ? (
             <p className="mt-3 text-[11px] text-slate-600">
