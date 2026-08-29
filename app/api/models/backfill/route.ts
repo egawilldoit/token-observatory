@@ -58,22 +58,6 @@ export async function POST(request: Request) {
   const warnings: string[] = [];
 
   for (const item of imports ?? []) {
-    const { data: existing, error: existingError } = await supabase
-      .from("daily_model_usage_observations")
-      .select("id")
-      .eq("import_id", item.id)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingError) {
-      return NextResponse.json(
-        { error: "Could not inspect model backfill state." },
-        { status: 500 },
-      );
-    }
-
-    if (existing) continue;
-
     const storagePath =
       typeof item.storage_path === "string" ? item.storage_path : null;
     if (!storagePath) continue;
