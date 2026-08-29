@@ -81,6 +81,7 @@ test("classifies overlap as unchanged, revised, and new", () => {
 
   assert.equal(result.unchangedRows.length, 1);
   assert.equal(result.revisedRows.length, 1);
+  assert.equal(result.removedRows.length, 0);
   assert.equal(result.newRows.length, 1);
   assert.equal(result.netChange, 205);
 });
@@ -89,4 +90,37 @@ test("builds a three-calendar-day overlap command", () => {
   assert.equal(nextSinceFromDate("2026-08-28"), "2026-08-26");
   assert.match(buildCcusageCommand("2026-08-26"), /--since 20260826/);
   assert.match(buildCcusageCommand("2026-08-26"), /ccusage@20\.0\.20/);
+});
+
+
+test("tombstones an agent removed from a covered day", () => {
+  const current = parseCcusageDaily(fixture()).rows.map((row) => ({
+    ...row,
+    machine_id: "openclaw",
+  }));
+  const incoming = [current[0]].map(({ machine_id: _machineId, ...row }) => row);
+
+  const result = diffDailyUsage(incoming, current);
+
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].agent, "opencode");
+  assert.equal(result.removedRows[0].is_tombstone, true);
+  assert.equal(result.afterTotal, 100);
+  assert.equal(result.netChange, -200);
+});
+
+test("cost-only changes create a new observation version", () => {
+  const parsed = parseCcusageDaily(fixture());
+  const current = parsed.rows.map((row) => ({
+    ...row,
+    machine_id: "openclaw",
+  }));
+  const changed = structuredClone(fixture());
+  changed.daily[0].agents[0].cost = 1.25;
+  const incoming = parseCcusageDaily(changed).rows;
+
+  const result = diffDailyUsage(incoming, current);
+
+  assert.equal(result.revisedRows.length, 1);
+  assert.equal(result.netChange, 0);
 });

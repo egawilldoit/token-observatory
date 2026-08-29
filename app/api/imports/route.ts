@@ -182,6 +182,35 @@ export async function POST(request: Request) {
     );
   }
 
+  const { data: latestAccepted, error: latestAcceptedError } = await supabase
+    .from("imports")
+    .select("scope_end")
+    .eq("machine_id", machineId)
+    .eq("status", "processed")
+    .not("scope_end", "is", null)
+    .order("scope_end", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestAcceptedError) {
+    return NextResponse.json({ error: latestAcceptedError.message }, { status: 500 });
+  }
+
+  if (
+    latestAccepted?.scope_end &&
+    parsed.scopeEnd < latestAccepted.scope_end
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "This snapshot ends before the latest accepted machine history (" +
+          latestAccepted.scope_end +
+          "). Generate a current overlapping export instead.",
+      },
+      { status: 409 },
+    );
+  }
+
   const { data: sameHashElsewhere, error: crossMachineError } = await supabase
     .from("imports")
     .select("id,machine_id")
@@ -310,11 +339,16 @@ export async function POST(request: Request) {
     parsed.rows,
     (currentData ?? []) as CurrentDailyUsageRow[],
   );
-  const rowsToWrite = [...diff.newRows, ...diff.revisedRows];
+  const rowsToWrite = [
+    ...diff.newRows,
+    ...diff.revisedRows,
+    ...diff.removedRows,
+  ];
 
   const summary = {
     new: diff.newRows.length,
     revised: diff.revisedRows.length,
+    removed: diff.removedRows.length,
     unchanged: diff.unchangedRows.length,
     beforeTotal: diff.beforeTotal,
     afterTotal: diff.afterTotal,
