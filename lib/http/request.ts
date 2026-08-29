@@ -16,3 +16,7 @@ export function requestExceedsBytes(request: Request, maxBytes: number) {
   const value = Number(header);
   return Number.isFinite(value) && value > maxBytes;
 }
+
+export function decodeUtf8Strict(bytes: Uint8Array) {
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
