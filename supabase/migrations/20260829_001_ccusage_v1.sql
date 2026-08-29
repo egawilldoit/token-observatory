@@ -31,14 +31,22 @@ create table if not exists public.imports (
   constraint imports_status_check check (
     status in ('processing', 'processed', 'exact_duplicate', 'failed')
   ),
-  constraint imports_file_size_nonnegative check (
-    file_size_bytes is null or file_size_bytes >= 0
+  constraint imports_file_size_check check (
+    file_size_bytes is null or file_size_bytes between 0 and 8388608
+  ),
+  constraint imports_hash_format check (raw_sha256 ~ '^[0-9a-f]{64}$'),
+  constraint imports_scope_order check (
+    scope_start is null or scope_end is null or scope_start <= scope_end
   )
 );
 
-create unique index if not exists imports_one_active_hash_per_machine
-  on public.imports(machine_id, raw_sha256)
+create unique index if not exists imports_one_active_hash_global
+  on public.imports(raw_sha256)
   where status in ('processing', 'processed');
+
+create unique index if not exists imports_one_processing_per_machine
+  on public.imports(machine_id)
+  where status = 'processing';
 
 create index if not exists imports_machine_created_idx
   on public.imports(machine_id, created_at desc);
@@ -62,7 +70,10 @@ create table if not exists public.daily_usage_observations (
   usage_hash text not null,
   created_at timestamptz not null default now(),
   constraint daily_usage_agent_nonempty check (length(trim(agent)) > 0),
-  constraint daily_usage_hash_nonempty check (length(trim(usage_hash)) > 0),
+  constraint daily_usage_hash_format check (usage_hash ~ '^[0-9a-f]{64}$'),
+  constraint daily_usage_cost_nonnegative check (
+    reported_cost_usd is null or reported_cost_usd >= 0
+  ),
   unique(machine_id, agent, usage_date, usage_hash)
 );
 
@@ -192,13 +203,15 @@ revoke all on table public.machines from anon, authenticated;
 revoke all on table public.imports from anon, authenticated;
 revoke all on table public.daily_usage_observations from anon, authenticated;
 revoke all on table public.v_current_daily_usage from anon, authenticated;
-revoke all on function public.process_ccusage_import(uuid, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.process_ccusage_import(uuid, jsonb, jsonb)
+  from public, anon, authenticated;
 
 grant all on table public.machines to service_role;
 grant all on table public.imports to service_role;
 grant all on table public.daily_usage_observations to service_role;
 grant select on table public.v_current_daily_usage to service_role;
-grant execute on function public.process_ccusage_import(uuid, jsonb, jsonb) to service_role;
+grant execute on function public.process_ccusage_import(uuid, jsonb, jsonb)
+  to service_role;
 
 insert into storage.buckets (
   id,
@@ -212,7 +225,7 @@ values (
   'raw-imports',
   false,
   8388608,
-  array['application/json', 'text/plain']::text[]
+  array['application/json']::text[]
 )
 on conflict (id) do update
 set

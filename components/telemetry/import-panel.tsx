@@ -23,6 +23,7 @@ type ImportResponse = {
   status: "processed" | "exact_duplicate";
   importId: string;
   duplicateOfImportId?: string;
+  duplicateOfMachineId?: string;
   crossMachineMatch?: boolean;
   summary?: {
     new: number;
@@ -42,8 +43,12 @@ type ImportResponse = {
 function compact(value: number) {
   const abs = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (abs >= 1_000_000_000) return sign + (abs / 1_000_000_000).toFixed(2) + "B";
-  if (abs >= 1_000_000) return sign + (abs / 1_000_000).toFixed(1) + "M";
+  if (abs >= 1_000_000_000) {
+    return sign + (abs / 1_000_000_000).toFixed(2) + "B";
+  }
+  if (abs >= 1_000_000) {
+    return sign + (abs / 1_000_000).toFixed(1) + "M";
+  }
   return value.toLocaleString();
 }
 
@@ -184,7 +189,10 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         </button>
 
         {error ? (
-          <div className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.07] p-3 text-sm text-red-200">
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.07] p-3 text-sm text-red-200"
+          >
             {error}
           </div>
         ) : null}
@@ -215,13 +223,19 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         </div>
 
         {result ? (
-          <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.05] p-5 md:p-6">
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.05] p-5 md:p-6"
+          >
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
               <div>
                 <p className="font-semibold">
                   {result.status === "exact_duplicate"
-                    ? "Exact duplicate skipped"
+                    ? result.crossMachineMatch
+                      ? "Cross-machine duplicate skipped"
+                      : "Exact duplicate skipped"
                     : "Import processed"}
                 </p>
                 <p className="mt-1 text-xs text-emerald-100/50">
@@ -281,8 +295,9 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
             {result.crossMachineMatch ? (
               <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-xs leading-5 text-amber-100/80">
-                The same raw dataset has appeared on another machine. V1 keeps
-                provenance and flags it; it does not silently merge machines.
+                These exact bytes were already accepted for{" "}
+                <b>{result.duplicateOfMachineId ?? "another machine"}</b>. They
+                were not promoted again, so global totals stay deduplicated.
               </p>
             ) : null}
           </div>

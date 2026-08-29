@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { hasAuthenticatedUser } from "@/lib/auth/require-user";
+import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { diffDailyUsage } from "@/lib/ccusage/diff";
 import { sha256Buffer } from "@/lib/ccusage/hash";
 import { parseCcusageDaily } from "@/lib/ccusage/parser";
@@ -13,10 +13,10 @@ import {
   MAX_IMPORT_BYTES,
   nextSinceFromDate,
   RAW_IMPORT_BUCKET,
+  STALE_IMPORT_MINUTES,
   SUPPORTED_CCUSAGE_VERSION,
   TELEMETRY_TIMEZONE,
 } from "@/lib/telemetry/config";
-
 
 function safeFilename(name: string) {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);
@@ -37,10 +37,14 @@ async function markFailed(importId: string, message: string) {
 
 export async function POST(request: Request) {
   if (!isTelemetryConfigured()) {
-    return NextResponse.json({ error: "Supabase telemetry is not configured." }, { status: 503 });
+    return NextResponse.json(
+      { error: "Supabase telemetry is not configured." },
+      { status: 503 },
+    );
   }
-  if (!(await hasAuthenticatedUser())) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+  if (!(await hasObservatoryAccess())) {
+    return NextResponse.json({ error: "Observatory access denied." }, { status: 403 });
   }
 
   const form = await request.formData();
@@ -55,8 +59,12 @@ export async function POST(request: Request) {
   const file = form.get("file");
 
   if (!machineId || !(file instanceof File)) {
-    return NextResponse.json({ error: "Machine and JSON file are required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Machine and JSON file are required." },
+      { status: 400 },
+    );
   }
+
   if (file.size <= 0 || file.size > MAX_IMPORT_BYTES) {
     return NextResponse.json(
       { error: "JSON file must be between 1 byte and 8 MB." },
@@ -73,24 +81,51 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (machineError || !machine) {
-    return NextResponse.json({ error: "Unknown or inactive machine." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Unknown or inactive machine." },
+      { status: 400 },
+    );
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const rawSha = sha256Buffer(buffer);
 
-  const { data: existing } = await supabase
+  const staleBefore = new Date(
+    Date.now() - STALE_IMPORT_MINUTES * 60 * 1000,
+  ).toISOString();
+  const { error: staleRecoveryError } = await supabase
     .from("imports")
-    .select("id,scope_end")
-    .eq("machine_id", machineId)
+    .update({
+      status: "failed",
+      error_message: "Recovered stale processing import.",
+      processed_at: new Date().toISOString(),
+    })
+    .eq("status", "processing")
+    .lt("created_at", staleBefore);
+
+  if (staleRecoveryError) {
+    return NextResponse.json(
+      { error: "Could not recover stale imports: " + staleRecoveryError.message },
+      { status: 500 },
+    );
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("imports")
+    .select("id,machine_id,scope_end")
     .eq("raw_sha256", rawSha)
     .in("status", ["processing", "processed"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
+
   if (existing) {
     const duplicateId = randomUUID();
+    const crossMachineMatch = existing.machine_id !== machineId;
     const { error: duplicateAuditError } = await supabase.from("imports").insert({
       id: duplicateId,
       machine_id: machineId,
@@ -102,6 +137,7 @@ export async function POST(request: Request) {
       timezone: TELEMETRY_TIMEZONE,
       status: "exact_duplicate",
       duplicate_of_import_id: existing.id,
+      cross_machine_match: crossMachineMatch,
       processed_at: new Date().toISOString(),
     });
 
@@ -112,15 +148,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const since = existing.scope_end
-      ? nextSinceFromDate(existing.scope_end)
-      : null;
-
     return NextResponse.json({
       status: "exact_duplicate",
       importId: duplicateId,
       duplicateOfImportId: existing.id,
-      nextCommand: buildCcusageCommand(since),
+      duplicateOfMachineId: existing.machine_id,
+      crossMachineMatch,
+      nextCommand:
+        crossMachineMatch || !existing.scope_end
+          ? undefined
+          : buildCcusageCommand(nextSinceFromDate(existing.scope_end)),
     });
   }
 
@@ -128,7 +165,10 @@ export async function POST(request: Request) {
   try {
     payload = JSON.parse(buffer.toString("utf8"));
   } catch {
-    return NextResponse.json({ error: "File is not valid UTF-8 JSON." }, { status: 400 });
+    return NextResponse.json(
+      { error: "File is not valid UTF-8 JSON." },
+      { status: 400 },
+    );
   }
 
   let parsed;
@@ -136,19 +176,36 @@ export async function POST(request: Request) {
     parsed = parseCcusageDaily(payload);
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unsupported ccusage JSON." },
+      {
+        error:
+          error instanceof Error ? error.message : "Unsupported ccusage JSON.",
+      },
       { status: 422 },
     );
   }
 
-  const { data: sameHashElsewhere } = await supabase
+  const { data: inFlight, error: inFlightError } = await supabase
     .from("imports")
-    .select("id,machine_id")
-    .eq("raw_sha256", rawSha)
-    .eq("status", "processed")
-    .neq("machine_id", machineId)
+    .select("id,created_at")
+    .eq("machine_id", machineId)
+    .eq("status", "processing")
     .limit(1)
     .maybeSingle();
+
+  if (inFlightError) {
+    return NextResponse.json({ error: inFlightError.message }, { status: 500 });
+  }
+
+  if (inFlight) {
+    return NextResponse.json(
+      {
+        error:
+          "Another import is already processing for this machine. Retry after it finishes.",
+        importId: inFlight.id,
+      },
+      { status: 409 },
+    );
+  }
 
   const importId = randomUUID();
   const storagePath =
@@ -167,28 +224,46 @@ export async function POST(request: Request) {
     scope_start: parsed.scopeStart,
     scope_end: parsed.scopeEnd,
     status: "processing",
-    cross_machine_match: Boolean(sameHashElsewhere),
+    cross_machine_match: false,
   });
 
   if (importError) {
-    const { data: raced } = await supabase
+    const { data: racedHash } = await supabase
       .from("imports")
-      .select("id,scope_end")
-      .eq("machine_id", machineId)
+      .select("id,machine_id")
       .eq("raw_sha256", rawSha)
       .in("status", ["processing", "processed"])
       .limit(1)
       .maybeSingle();
 
-    if (raced) {
-      return NextResponse.json({
-        status: "exact_duplicate",
-        importId: raced.id,
-        duplicateOfImportId: raced.id,
-        nextCommand: buildCcusageCommand(
-          raced.scope_end ? nextSinceFromDate(raced.scope_end) : null,
-        ),
-      });
+    if (racedHash) {
+      return NextResponse.json(
+        {
+          error: "This exact dataset was claimed by another import. Retry to record it as a duplicate.",
+          duplicateOfImportId: racedHash.id,
+          duplicateOfMachineId: racedHash.machine_id,
+        },
+        { status: 409 },
+      );
+    }
+
+    const { data: racedMachine } = await supabase
+      .from("imports")
+      .select("id")
+      .eq("machine_id", machineId)
+      .eq("status", "processing")
+      .limit(1)
+      .maybeSingle();
+
+    if (racedMachine) {
+      return NextResponse.json(
+        {
+          error:
+            "Another import started for this machine. Retry after it finishes.",
+          importId: racedMachine.id,
+        },
+        { status: 409 },
+      );
     }
 
     return NextResponse.json({ error: importError.message }, { status: 500 });
@@ -237,7 +312,7 @@ export async function POST(request: Request) {
     scopeEnd: parsed.scopeEnd,
     warnings: parsed.warnings,
     sourceShape: parsed.sourceShape,
-    crossMachineMatch: Boolean(sameHashElsewhere),
+    crossMachineMatch: false,
   };
 
   const { error: rpcError } = await supabase.rpc("process_ccusage_import", {
@@ -254,13 +329,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const nextSince = nextSinceFromDate(parsed.scopeEnd);
-
   return NextResponse.json({
     status: "processed",
     importId,
-    crossMachineMatch: Boolean(sameHashElsewhere),
+    crossMachineMatch: false,
     summary,
-    nextCommand: buildCcusageCommand(nextSince),
+    nextCommand: buildCcusageCommand(nextSinceFromDate(parsed.scopeEnd)),
   });
 }
