@@ -1,9 +1,11 @@
+import { redirect } from "next/navigation";
+
 import { AppShell } from "@/components/telemetry/app-shell";
 import { MachineManager } from "@/components/telemetry/machine-manager";
 import { SetupRequired } from "@/components/telemetry/setup-required";
+import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
 import { getMachines } from "@/lib/telemetry/queries";
-
 
 export default async function MachinesPage() {
   if (!isTelemetryConfigured()) {
@@ -12,6 +14,10 @@ export default async function MachinesPage() {
         <SetupRequired />
       </AppShell>
     );
+  }
+
+  if (!(await hasObservatoryAccess())) {
+    redirect("/auth/unauthorized");
   }
 
   const machines = await getMachines();
