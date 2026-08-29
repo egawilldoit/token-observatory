@@ -10,6 +10,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { LogoutButton } from "@/components/logout-button";
+
 const navigation = [
   { href: "/dashboard", label: "Overview", icon: Activity },
   { href: "/imports", label: "Imports", icon: UploadCloud },
@@ -34,7 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </Link>
 
-          <nav className="mt-10 space-y-1">
+          <nav aria-label="Primary" className="mt-10 space-y-1">
             {navigation.map((item) => {
               const Icon = item.icon;
               const active = pathname.startsWith(item.href);
@@ -42,6 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active ? "page" : undefined}
                   className={[
                     "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
                     active
@@ -52,41 +55,53 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Icon className="h-4 w-4" />
                   {item.label}
                   {active ? (
-                    <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-300" />
+                    <span
+                      aria-hidden="true"
+                      className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-300"
+                    />
                   ) : null}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="absolute bottom-7 w-[216px] border-t border-white/10 pt-5 text-xs leading-5 text-slate-500">
-            Absolute observations.
-            <br />
-            Latest accepted row wins.
+          <div className="absolute bottom-7 w-[216px] border-t border-white/10 pt-4">
+            <p className="mb-3 text-xs leading-5 text-slate-500">
+              Absolute observations.
+              <br />
+              Latest accepted row wins.
+            </p>
+            <LogoutButton compact />
           </div>
         </aside>
 
         <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
-          <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
-            {navigation.map((item) => {
-              const Icon = item.icon;
-              const active = pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={[
-                    "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs",
-                    active
-                      ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
-                      : "border-white/10 bg-white/[0.03] text-slate-400",
-                  ].join(" ")}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {item.label}
-                </Link>
-              );
-            })}
+          <div className="mb-5 flex items-center gap-2 overflow-x-auto pb-1 lg:hidden">
+            <nav aria-label="Primary" className="flex gap-2">
+              {navigation.map((item) => {
+                const Icon = item.icon;
+                const active = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={[
+                      "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs",
+                      active
+                        ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+                        : "border-white/10 bg-white/[0.03] text-slate-400",
+                    ].join(" ")}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="ml-auto shrink-0">
+              <LogoutButton compact />
+            </div>
           </div>
           {children}
         </main>
