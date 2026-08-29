@@ -26,6 +26,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify npm package signatures
+        run: npm audit signatures
+        continue-on-error: true
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
