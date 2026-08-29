@@ -7,19 +7,33 @@ import { TelemetryRouteLoading } from "@/components/telemetry/route-loading";
 import { SetupRequired } from "@/components/telemetry/setup-required";
 import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
-import { getCurrentDailyUsage, getMachines } from "@/lib/telemetry/queries";
+import {
+  getCurrentDailyUsage,
+  getMachineCollectionHints,
+  getMachines,
+  getRecentImports,
+} from "@/lib/telemetry/queries";
 
 async function DashboardRuntime() {
   if (!(await hasObservatoryAccess())) {
     redirect("/auth/unauthorized");
   }
 
-  const [rows, machines] = await Promise.all([
+  const [rows, machines, recentImports, collectionHints] = await Promise.all([
     getCurrentDailyUsage(),
     getMachines(),
+    getRecentImports(8),
+    getMachineCollectionHints(),
   ]);
 
-  return <DashboardView rows={rows} machines={machines} />;
+  return (
+    <DashboardView
+      rows={rows}
+      machines={machines}
+      recentImports={recentImports}
+      collectionHints={collectionHints}
+    />
+  );
 }
 
 export default function DashboardPage() {
