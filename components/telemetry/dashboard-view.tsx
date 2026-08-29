@@ -310,7 +310,7 @@ export function DashboardView({
 
               <div className="flex h-72 items-end gap-1 overflow-x-auto border-b border-white/10 pb-1">
                 {byPeriod.map((day, index) => {
-                  const height = Math.max(2, (day.total / maxPeriod) * 100);
+                  const height = day.total === 0 ? 0 : Math.max(2, (day.total / maxPeriod) * 100);
                   const labelEvery = byPeriod.length > 20 ? 5 : 2;
                   return (
                     <div

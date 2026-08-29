@@ -34,6 +34,10 @@ function tombstoneFor(
 export function diffDailyUsage(
   incoming: DailyUsageObservationInput[],
   current: CurrentDailyUsageRow[],
+  coverage?: {
+    scopeStart?: string | null;
+    scopeEnd?: string | null;
+  },
 ): DiffSummary {
   const currentByKey = new Map(
     current.map((row) => [keyOf(row), row] as const),
@@ -42,7 +46,11 @@ export function diffDailyUsage(
     current.map((row) => [keyOf(row), row] as const),
   );
   const incomingKeys = new Set(incoming.map(keyOf));
-  const incomingDates = new Set(incoming.map((row) => row.usage_date));
+  const incomingDates = incoming.map((row) => row.usage_date).sort();
+  const observedScopeStart = incomingDates[0] ?? null;
+  const observedScopeEnd = incomingDates[incomingDates.length - 1] ?? null;
+  const scopeStart = coverage?.scopeStart ?? observedScopeStart;
+  const scopeEnd = coverage?.scopeEnd ?? observedScopeEnd;
 
   const newRows: DailyUsageObservationInput[] = [];
   const revisedRows: DailyUsageObservationInput[] = [];
@@ -69,7 +77,13 @@ export function diffDailyUsage(
 
   for (const existing of currentByKey.values()) {
     const key = keyOf(existing);
-    if (incomingDates.has(existing.usage_date) && !incomingKeys.has(key)) {
+    const coveredBySnapshot =
+      scopeStart !== null &&
+      scopeEnd !== null &&
+      existing.usage_date >= scopeStart &&
+      existing.usage_date <= scopeEnd;
+
+    if (coveredBySnapshot && !incomingKeys.has(key)) {
       removedRows.push(tombstoneFor(existing));
       projected.delete(key);
     }

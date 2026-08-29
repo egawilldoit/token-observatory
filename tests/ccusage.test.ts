@@ -4,7 +4,12 @@ import { readFile } from "node:fs/promises";
 
 import { diffDailyUsage } from "../lib/ccusage/diff";
 import { parseCcusageDaily } from "../lib/ccusage/parser";
-import { buildCcusageCommand, nextSinceFromDate } from "../lib/telemetry/config";
+import {
+  buildCcusageCommand,
+  isFutureTelemetryDate,
+  nextSinceFromDate,
+  todayInTelemetryTimezone,
+} from "../lib/telemetry/config";
 import type {
   CurrentDailyUsageRow,
   DailyUsageObservationInput,
@@ -42,6 +47,13 @@ function fixture(total = 300) {
         ],
       },
     ],
+    totals: {
+      inputTokens: 90,
+      outputTokens: 30,
+      cacheReadTokens: 180,
+      cacheCreationTokens: 0,
+      totalTokens: total,
+    },
   };
 }
 
@@ -167,4 +179,102 @@ test("rejects missing required token counters", () => {
   Reflect.deleteProperty(payload.daily[0].agents[0], "inputTokens");
 
   assert.throws(() => parseCcusageDaily(payload), /Invalid inputTokens/);
+});
+
+
+test("tombstones a whole missing day inside an overlapping snapshot", () => {
+  const source = parseCcusageDaily(fixture()).rows[0];
+  const current: CurrentDailyUsageRow[] = [
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+  ].map((usage_date) => ({
+    ...source,
+    usage_date,
+    usage_hash: "hash-" + usage_date,
+    machine_id: "openclaw",
+  }));
+
+  const incoming: DailyUsageObservationInput[] = [current[0], current[2]];
+
+  const result = diffDailyUsage(incoming, current);
+
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].usage_date, "2026-08-27");
+  assert.equal(result.netChange, -100);
+});
+
+test("uses the Africa/Casablanca calendar boundary for future-date rejection", () => {
+  const now = new Date("2026-08-29T23:30:00Z");
+
+  assert.equal(todayInTelemetryTimezone(now), "2026-08-30");
+  assert.equal(isFutureTelemetryDate("2026-08-30", now), false);
+  assert.equal(isFutureTelemetryDate("2026-08-31", now), true);
+});
+
+test("forward migration exposes accepted scope state independent of current usage rows", async () => {
+  const migration = await readFile(
+    new URL(
+      "../supabase/migrations/20260829_002_collection_state.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /v_machine_collection_state/);
+  assert.match(
+    migration,
+    /max\(i\.scope_end\) filter \(where i\.status = 'processed'\)/,
+  );
+  assert.match(
+    migration,
+    /grant select on table public\.v_machine_collection_state to service_role/,
+  );
+});
+
+
+test("rejects daily rows that disagree with top-level totals", () => {
+  const payload = fixture();
+  payload.totals.outputTokens = 31;
+
+  assert.throws(
+    () => parseCcusageDaily(payload),
+    /Daily rows do not reconcile with top-level outputTokens/,
+  );
+});
+
+
+test("tombstones a missing leading day when the server overlap starts earlier than visible rows", () => {
+  const source = parseCcusageDaily(fixture()).rows[0];
+  const current: CurrentDailyUsageRow[] = [
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+  ].map((usage_date) => ({
+    ...source,
+    usage_date,
+    usage_hash: "current-" + usage_date,
+    machine_id: "openclaw",
+  }));
+  const incoming: DailyUsageObservationInput[] = [current[1], current[2]];
+
+  const result = diffDailyUsage(incoming, current, {
+    scopeStart: "2026-08-26",
+    scopeEnd: "2026-08-28",
+  });
+
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].usage_date, "2026-08-26");
+  assert.equal(result.netChange, -100);
+});
+
+
+test("rejects oversized or control-character agent identifiers", () => {
+  const oversized = fixture();
+  oversized.daily[0].agents[0].agent = "a".repeat(129);
+  assert.throws(() => parseCcusageDaily(oversized), /missing a valid agent/);
+
+  const controlled = fixture();
+  controlled.daily[0].agents[0].agent = "codex\u0000hidden";
+  assert.throws(() => parseCcusageDaily(controlled), /missing a valid agent/);
 });

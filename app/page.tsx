@@ -16,7 +16,7 @@ const features = [
   {
     icon: Fingerprint,
     title: "Idempotent dedupe",
-    text: "Exact file hashes and per-day usage hashes prevent overlapping snapshots from inflating totals.",
+    text: "Exact-file dedupe plus immutable daily revisions prevent overlapping snapshots from inflating totals.",
   },
   {
     icon: LineChart,
@@ -94,7 +94,7 @@ export default function Home() {
               {[
                 ["01", "Upload", "Raw JSON → immutable Storage"],
                 ["02", "Fingerprint", "SHA-256 + daily usage hashes"],
-                ["03", "Diff", "New · revised · unchanged"],
+                ["03", "Diff", "New · revised · removed · unchanged"],
                 ["04", "Promote", "Atomic Postgres observation write"],
                 ["05", "Visualize", "Latest accepted daily truth"],
               ].map(([step, label, detail]) => (

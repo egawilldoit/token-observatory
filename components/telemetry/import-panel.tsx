@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 type MachineHint = {
   id: string;
   name: string;
-  lastUsageDate: string | null;
+  lastAcceptedScopeEnd: string | null;
   nextSince: string | null;
   command: string;
 };
@@ -206,8 +206,8 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
             <div className="min-w-0">
               <h2 className="font-semibold">Recommended collection command</h2>
               <p className="mt-1 text-xs text-slate-500">
-                {selected?.lastUsageDate
-                  ? "Three-day overlap from the latest accepted usage date."
+                {selected?.lastAcceptedScopeEnd
+                  ? "Three-day overlap from the latest accepted import scope."
                   : "First import uses full available history."}
               </p>
             </div>
@@ -215,9 +215,9 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
           <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-slate-300">
             {selected?.command}
           </pre>
-          {selected?.lastUsageDate ? (
+          {selected?.lastAcceptedScopeEnd ? (
             <p className="mt-3 text-[11px] text-slate-600">
-              Latest accepted date: {selected.lastUsageDate} · next since:{" "}
+              Latest accepted scope end: {selected.lastAcceptedScopeEnd} · next since:{" "}
               {selected.nextSince}
             </p>
           ) : null}
