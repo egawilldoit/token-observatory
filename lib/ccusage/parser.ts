@@ -54,7 +54,14 @@ function optionalCost(row: JsonObject, context: string) {
 function normalizedAgent(value: unknown) {
   if (typeof value !== "string") return null;
   const agent = value.trim().toLowerCase();
-  if (!agent || agent === "all") return null;
+  if (
+    !agent ||
+    agent === "all" ||
+    agent.length > 128 ||
+    /[\u0000-\u001f\u007f]/.test(agent)
+  ) {
+    return null;
+  }
   return agent;
 }
 
