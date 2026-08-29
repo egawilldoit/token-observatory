@@ -7,7 +7,6 @@ import {
   getRecentImports,
 } from "@/lib/telemetry/queries";
 
-export const dynamic = "force-dynamic";
 
 function compact(value: unknown) {
   const number = typeof value === "number" ? value : Number(value ?? 0);

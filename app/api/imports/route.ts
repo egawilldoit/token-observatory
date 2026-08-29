@@ -17,8 +17,6 @@ import {
   TELEMETRY_TIMEZONE,
 } from "@/lib/telemetry/config";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 function safeFilename(name: string) {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);

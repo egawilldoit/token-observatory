@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { hasAuthenticatedUser } from "@/lib/auth/require-user";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 
-export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   if (!isTelemetryConfigured()) {
