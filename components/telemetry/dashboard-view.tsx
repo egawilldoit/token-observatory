@@ -255,9 +255,6 @@ export function DashboardView({
     return subtractDays(latestUsageDate, days);
   }, [latestUsageDate, range]);
 
-  const inRange = (usageDate: string) =>
-    !rangeStart || usageDate >= rangeStart;
-
   const agents = useMemo(
     () => [...new Set(rows.map((row) => row.agent))].sort(),
     [rows],
@@ -269,7 +266,7 @@ export function DashboardView({
         (row) =>
           (machine === "all" || row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
-          inRange(row.usage_date),
+          (!rangeStart || row.usage_date >= rangeStart),
       ),
     [agent, machine, rangeStart, rows],
   );
@@ -283,7 +280,7 @@ export function DashboardView({
               (row) =>
                 (machine === "all" || row.machine_id === machine) &&
                 (agent === "all" || row.agent === agent) &&
-                inRange(row.usage_date),
+                (!rangeStart || row.usage_date >= rangeStart),
             )
             .map((row) => row.model),
         ),
@@ -298,7 +295,7 @@ export function DashboardView({
           (machine === "all" || row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
           (model === "all" || row.model === model) &&
-          inRange(row.usage_date),
+          (!rangeStart || row.usage_date >= rangeStart),
       ),
     [agent, machine, model, modelRows, rangeStart],
   );
@@ -317,7 +314,7 @@ export function DashboardView({
         (row) =>
           (machine === "all" || row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
-          inRange(row.usage_date),
+          (!rangeStart || row.usage_date >= rangeStart),
       ),
     [agent, machine, modelRows, rangeStart],
   );
@@ -613,7 +610,10 @@ export function DashboardView({
             <select
               aria-label="Filter by machine"
               value={machine}
-              onChange={(event) => setMachine(event.target.value)}
+              onChange={(event) => {
+                setMachine(event.target.value);
+                setModel("all");
+              }}
               className="h-10 min-w-0 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
             >
               <option value="all">All machines</option>
