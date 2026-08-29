@@ -12,8 +12,12 @@ export function diffDailyUsage(
   incoming: DailyUsageObservationInput[],
   current: CurrentDailyUsageRow[],
 ): DiffSummary {
-  const currentByKey = new Map(current.map((row) => [keyOf(row), row]));
-  const projected = new Map(current.map((row) => [keyOf(row), row]));
+  const currentByKey = new Map(
+    current.map((row) => [keyOf(row), row] as const),
+  );
+  const projected = new Map<string, DailyUsageObservationInput>(
+    current.map((row) => [keyOf(row), row] as const),
+  );
 
   const newRows: DailyUsageObservationInput[] = [];
   const revisedRows: DailyUsageObservationInput[] = [];
