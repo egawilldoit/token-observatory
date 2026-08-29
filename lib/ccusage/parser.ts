@@ -5,6 +5,12 @@ import type {
 } from "./types";
 
 type JsonObject = Record<string, unknown>;
+type TokenKey =
+  | "inputTokens"
+  | "outputTokens"
+  | "cacheReadTokens"
+  | "cacheCreationTokens"
+  | "totalTokens";
 
 function asObject(value: unknown): JsonObject | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -16,20 +22,30 @@ function asObjects(value: unknown): JsonObject[] {
   return value.map(asObject).filter((item): item is JsonObject => Boolean(item));
 }
 
-function numberValue(value: unknown, fallback = 0) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
+function requiredToken(row: JsonObject, key: TokenKey, context: string) {
+  const value = row[key];
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error("Invalid " + key + " for " + context + ".");
   }
-  return fallback;
+
+  return parsed;
 }
 
-function optionalCost(row: JsonObject) {
+function optionalCost(row: JsonObject, context: string) {
   for (const key of ["totalCost", "costUSD", "cost"]) {
     if (row[key] !== undefined && row[key] !== null) {
       const parsed = Number(row[key]);
-      if (Number.isFinite(parsed)) return parsed;
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error("Invalid cost for " + context + ".");
+      }
+      return parsed;
     }
   }
   return null;
@@ -68,25 +84,17 @@ function observationFrom(
   agent: string,
   usageDate: string,
 ): DailyUsageObservationInput {
-  const input_tokens = numberValue(row.inputTokens);
-  const output_tokens = numberValue(row.outputTokens);
-  const cache_read_tokens = numberValue(row.cacheReadTokens);
-  const cache_creation_tokens = numberValue(row.cacheCreationTokens);
-  const reported_total_tokens = numberValue(row.totalTokens);
-
-  for (const [name, value] of Object.entries({
-    input_tokens,
-    output_tokens,
-    cache_read_tokens,
-    cache_creation_tokens,
-    reported_total_tokens,
-  })) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new Error(
-        "Invalid " + name + " for " + agent + " on " + usageDate + ".",
-      );
-    }
-  }
+  const context = agent + " on " + usageDate;
+  const input_tokens = requiredToken(row, "inputTokens", context);
+  const output_tokens = requiredToken(row, "outputTokens", context);
+  const cache_read_tokens = requiredToken(row, "cacheReadTokens", context);
+  const cache_creation_tokens = requiredToken(
+    row,
+    "cacheCreationTokens",
+    context,
+  );
+  const reported_total_tokens = requiredToken(row, "totalTokens", context);
+  const reported_cost_usd = optionalCost(row, context);
 
   const accounting_delta_tokens =
     reported_total_tokens -
@@ -104,7 +112,8 @@ function observationFrom(
     cache_creation_tokens,
     reported_total_tokens,
     accounting_delta_tokens,
-    reported_cost_usd: optionalCost(row),
+    reported_cost_usd,
+    is_tombstone: false,
   };
 
   return {
@@ -187,23 +196,17 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
       agentTotal += observation.reported_total_tokens;
     }
 
-    if (day.totalTokens !== undefined && day.totalTokens !== null) {
-      const dayTotal = numberValue(day.totalTokens, Number.NaN);
-      if (!Number.isSafeInteger(dayTotal) || dayTotal < 0) {
-        throw new Error("Invalid day total on " + usageDate + ".");
-      }
-
-      if (agentTotal !== dayTotal) {
-        throw new Error(
-          "Per-agent totals do not reconcile with the day total on " +
-            usageDate +
-            ": agents=" +
-            agentTotal +
-            ", day=" +
-            dayTotal +
-            ".",
-        );
-      }
+    const dayTotal = requiredToken(day, "totalTokens", "day " + usageDate);
+    if (agentTotal !== dayTotal) {
+      throw new Error(
+        "Per-agent totals do not reconcile with the day total on " +
+          usageDate +
+          ": agents=" +
+          agentTotal +
+          ", day=" +
+          dayTotal +
+          ".",
+      );
     }
   }
 

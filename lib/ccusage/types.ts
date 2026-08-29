@@ -8,6 +8,7 @@ export type DailyUsageObservationInput = {
   reported_total_tokens: number;
   accounting_delta_tokens: number;
   reported_cost_usd: number | null;
+  is_tombstone: boolean;
   usage_hash: string;
 };
 
@@ -35,6 +36,7 @@ export type CurrentDailyUsageRow = DailyUsageObservationInput & {
 export type DiffSummary = {
   newRows: DailyUsageObservationInput[];
   revisedRows: DailyUsageObservationInput[];
+  removedRows: DailyUsageObservationInput[];
   unchangedRows: DailyUsageObservationInput[];
   beforeTotal: number;
   afterTotal: number;

@@ -10,7 +10,7 @@ export function usageHash(
   row: Omit<DailyUsageObservationInput, "usage_hash">,
 ) {
   const canonical = [
-    "ccusage-daily-agent-v1",
+    "ccusage-daily-agent-v2",
     row.agent,
     row.usage_date,
     row.input_tokens,
@@ -18,6 +18,8 @@ export function usageHash(
     row.cache_read_tokens,
     row.cache_creation_tokens,
     row.reported_total_tokens,
+    row.reported_cost_usd === null ? "null" : row.reported_cost_usd,
+    row.is_tombstone ? "tombstone" : "present",
   ].join("|");
 
   return createHash("sha256").update(canonical).digest("hex");
