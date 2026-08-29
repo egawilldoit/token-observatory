@@ -22,7 +22,7 @@ async function DashboardRuntime() {
   const [rows, machines, recentImports, collectionHints] = await Promise.all([
     getCurrentDailyUsage(),
     getMachines(),
-    getRecentImports(4),
+    getRecentImports(8),
     getMachineCollectionHints(),
   ]);
 
