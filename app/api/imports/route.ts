@@ -2,20 +2,28 @@ import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { hasObservatoryAccess } from "@/lib/auth/require-user";
+import { getObservatoryAccess } from "@/lib/auth/require-user";
 import { diffDailyUsage } from "@/lib/ccusage/diff";
 import { sha256Buffer } from "@/lib/ccusage/hash";
 import { parseCcusageDaily } from "@/lib/ccusage/parser";
 import type { CurrentDailyUsageRow } from "@/lib/ccusage/types";
+import {
+  isCrossOriginRequest,
+  requestExceedsBytes,
+} from "@/lib/http/request";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 import {
   buildCcusageCommand,
+  isFutureTelemetryDate,
+  MAX_COMMAND_USED_CHARS,
   MAX_IMPORT_BYTES,
+  MAX_IMPORT_REQUEST_BYTES,
   nextSinceFromDate,
   RAW_IMPORT_BUCKET,
   STALE_IMPORT_MINUTES,
   SUPPORTED_CCUSAGE_VERSION,
   TELEMETRY_TIMEZONE,
+  todayInTelemetryTimezone,
 } from "@/lib/telemetry/config";
 
 function safeFilename(name: string) {
@@ -43,14 +51,48 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!(await hasObservatoryAccess())) {
-    return NextResponse.json({ error: "Observatory access denied." }, { status: 403 });
+  const access = await getObservatoryAccess();
+  if (!access.authenticated) {
+    return NextResponse.json(
+      { error: "Authentication required." },
+      { status: 401 },
+    );
   }
 
-  const form = await request.formData();
+  if (!access.authorized) {
+    return NextResponse.json(
+      { error: "Observatory access denied." },
+      { status: 403 },
+    );
+  }
+
+  if (isCrossOriginRequest(request)) {
+    return NextResponse.json(
+      { error: "Cross-origin mutations are not allowed." },
+      { status: 403 },
+    );
+  }
+
+  if (requestExceedsBytes(request, MAX_IMPORT_REQUEST_BYTES)) {
+    return NextResponse.json(
+      { error: "Import request is too large." },
+      { status: 413 },
+    );
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json(
+      { error: "Expected multipart form data." },
+      { status: 400 },
+    );
+  }
+
   const machineId =
     typeof form.get("machine_id") === "string"
-      ? String(form.get("machine_id")).trim()
+      ? String(form.get("machine_id")).trim().toLowerCase()
       : "";
   const commandUsed =
     typeof form.get("command_used") === "string"
@@ -58,9 +100,23 @@ export async function POST(request: Request) {
       : null;
   const file = form.get("file");
 
-  if (!machineId || !(file instanceof File)) {
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(machineId)) {
     return NextResponse.json(
-      { error: "Machine and JSON file are required." },
+      { error: "A valid machine ID is required." },
+      { status: 400 },
+    );
+  }
+
+  if (!(file instanceof File)) {
+    return NextResponse.json(
+      { error: "A ccusage JSON file is required." },
+      { status: 400 },
+    );
+  }
+
+  if (commandUsed && commandUsed.length > MAX_COMMAND_USED_CHARS) {
+    return NextResponse.json(
+      { error: "Collection command metadata is too long." },
       { status: 400 },
     );
   }
@@ -80,7 +136,14 @@ export async function POST(request: Request) {
     .eq("is_active", true)
     .maybeSingle();
 
-  if (machineError || !machine) {
+  if (machineError) {
+    return NextResponse.json(
+      { error: "Could not validate the machine." },
+      { status: 500 },
+    );
+  }
+
+  if (!machine) {
     return NextResponse.json(
       { error: "Unknown or inactive machine." },
       { status: 400 },
@@ -106,7 +169,7 @@ export async function POST(request: Request) {
 
   if (staleRecoveryError) {
     return NextResponse.json(
-      { error: "Could not recover stale imports: " + staleRecoveryError.message },
+      { error: "Could not recover stale imports." },
       { status: 500 },
     );
   }
@@ -122,7 +185,10 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not check import deduplication state." },
+      { status: 500 },
+    );
   }
 
   if (existing?.status === "processing") {
@@ -153,7 +219,7 @@ export async function POST(request: Request) {
 
     if (duplicateAuditError) {
       return NextResponse.json(
-        { error: "Could not record duplicate import: " + duplicateAuditError.message },
+        { error: "Could not record the duplicate import." },
         { status: 500 },
       );
     }
@@ -169,12 +235,22 @@ export async function POST(request: Request) {
     });
   }
 
-  let payload: unknown;
+  let decoded: string;
   try {
-    payload = JSON.parse(buffer.toString("utf8"));
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
   } catch {
     return NextResponse.json(
-      { error: "File is not valid UTF-8 JSON." },
+      { error: "File is not valid UTF-8." },
+      { status: 400 },
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(decoded);
+  } catch {
+    return NextResponse.json(
+      { error: "File is not valid JSON." },
       { status: 400 },
     );
   }
@@ -192,6 +268,20 @@ export async function POST(request: Request) {
     );
   }
 
+  if (isFutureTelemetryDate(parsed.scopeEnd)) {
+    return NextResponse.json(
+      {
+        error:
+          "Snapshot contains future-dated usage through " +
+          parsed.scopeEnd +
+          "; current telemetry date is " +
+          todayInTelemetryTimezone() +
+          ".",
+      },
+      { status: 422 },
+    );
+  }
+
   const { data: latestAccepted, error: latestAcceptedError } = await supabase
     .from("imports")
     .select("scope_end")
@@ -203,7 +293,10 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (latestAcceptedError) {
-    return NextResponse.json({ error: latestAcceptedError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not read accepted import history." },
+      { status: 500 },
+    );
   }
 
   if (
@@ -231,7 +324,10 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (crossMachineError) {
-    return NextResponse.json({ error: crossMachineError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not check cross-machine provenance." },
+      { status: 500 },
+    );
   }
 
   const { data: inFlight, error: inFlightError } = await supabase
@@ -243,7 +339,10 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (inFlightError) {
-    return NextResponse.json({ error: inFlightError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not check machine import state." },
+      { status: 500 },
+    );
   }
 
   if (inFlight) {
@@ -290,7 +389,8 @@ export async function POST(request: Request) {
     if (racedHash) {
       return NextResponse.json(
         {
-          error: "This exact dataset was claimed by another import. Retry to record it as a duplicate.",
+          error:
+            "This exact dataset was claimed by another import. Retry to record it as a duplicate.",
           duplicateOfImportId: racedHash.id,
           duplicateOfMachineId: racedHash.machine_id,
         },
@@ -317,7 +417,10 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ error: importError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not create the import record." },
+      { status: 500 },
+    );
   }
 
   const { error: storageError } = await supabase.storage
@@ -330,7 +433,7 @@ export async function POST(request: Request) {
   if (storageError) {
     await markFailed(importId, storageError.message);
     return NextResponse.json(
-      { error: "Raw file storage failed: " + storageError.message },
+      { error: "Raw file storage failed." },
       { status: 500 },
     );
   }
@@ -342,7 +445,10 @@ export async function POST(request: Request) {
 
   if (currentError) {
     await markFailed(importId, currentError.message);
-    return NextResponse.json({ error: currentError.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Could not read canonical usage state." },
+      { status: 500 },
+    );
   }
 
   const diff = diffDailyUsage(
@@ -380,7 +486,7 @@ export async function POST(request: Request) {
   if (rpcError) {
     await markFailed(importId, rpcError.message);
     return NextResponse.json(
-      { error: "Database promotion failed: " + rpcError.message },
+      { error: "Database promotion failed." },
       { status: 500 },
     );
   }
