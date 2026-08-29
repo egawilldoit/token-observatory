@@ -1,21 +1,15 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { AppShell } from "@/components/telemetry/app-shell";
 import { DashboardView } from "@/components/telemetry/dashboard-view";
+import { TelemetryRouteLoading } from "@/components/telemetry/route-loading";
 import { SetupRequired } from "@/components/telemetry/setup-required";
 import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
 import { getCurrentDailyUsage, getMachines } from "@/lib/telemetry/queries";
 
-export default async function DashboardPage() {
-  if (!isTelemetryConfigured()) {
-    return (
-      <AppShell>
-        <SetupRequired />
-      </AppShell>
-    );
-  }
-
+async function DashboardRuntime() {
   if (!(await hasObservatoryAccess())) {
     redirect("/auth/unauthorized");
   }
@@ -25,9 +19,23 @@ export default async function DashboardPage() {
     getMachines(),
   ]);
 
+  return <DashboardView rows={rows} machines={machines} />;
+}
+
+export default function DashboardPage() {
+  if (!isTelemetryConfigured()) {
+    return (
+      <AppShell>
+        <SetupRequired />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
-      <DashboardView rows={rows} machines={machines} />
+      <Suspense fallback={<TelemetryRouteLoading />}>
+        <DashboardRuntime />
+      </Suspense>
     </AppShell>
   );
 }
