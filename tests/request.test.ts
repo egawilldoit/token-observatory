@@ -48,3 +48,13 @@ test("strict UTF-8 decoder rejects replacement-decoded invalid bytes", () => {
     /encoded data was not valid|valid for encoding/i,
   );
 });
+
+
+test("Sec-Fetch-Site cross-site is rejected even without Origin", () => {
+  const request = new Request("https://usage.example/api/imports", {
+    method: "POST",
+    headers: { "sec-fetch-site": "cross-site" },
+  });
+
+  assert.equal(isCrossOriginRequest(request), true);
+});
