@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 
-import { hasAuthenticatedUser } from "@/lib/auth/require-user";
+import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
-
 
 export async function POST(request: Request) {
   if (!isTelemetryConfigured()) {
-    return NextResponse.json({ error: "Supabase telemetry is not configured." }, { status: 503 });
+    return NextResponse.json(
+      { error: "Supabase telemetry is not configured." },
+      { status: 503 },
+    );
   }
-  if (!(await hasAuthenticatedUser())) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+
+  if (!(await hasObservatoryAccess())) {
+    return NextResponse.json({ error: "Observatory access denied." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -22,8 +25,12 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
   if (!name || name.length > 100) {
-    return NextResponse.json({ error: "A valid machine name is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "A valid machine name is required." },
+      { status: 400 },
+    );
   }
 
   const supabase = createAdminClient();

@@ -1,18 +1,24 @@
+import { redirect } from "next/navigation";
+
 import { AppShell } from "@/components/telemetry/app-shell";
 import { ImportPanel } from "@/components/telemetry/import-panel";
 import { SetupRequired } from "@/components/telemetry/setup-required";
+import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
 import {
   getMachineCollectionHints,
   getRecentImports,
 } from "@/lib/telemetry/queries";
 
-
 function compact(value: unknown) {
   const number = typeof value === "number" ? value : Number(value ?? 0);
   if (!Number.isFinite(number)) return "—";
-  if (Math.abs(number) >= 1_000_000_000) return (number / 1_000_000_000).toFixed(2) + "B";
-  if (Math.abs(number) >= 1_000_000) return (number / 1_000_000).toFixed(1) + "M";
+  if (Math.abs(number) >= 1_000_000_000) {
+    return (number / 1_000_000_000).toFixed(2) + "B";
+  }
+  if (Math.abs(number) >= 1_000_000) {
+    return (number / 1_000_000).toFixed(1) + "M";
+  }
   return number.toLocaleString();
 }
 
@@ -23,6 +29,10 @@ export default async function ImportsPage() {
         <SetupRequired />
       </AppShell>
     );
+  }
+
+  if (!(await hasObservatoryAccess())) {
+    redirect("/auth/unauthorized");
   }
 
   const [machines, recent] = await Promise.all([
@@ -40,8 +50,8 @@ export default async function ImportsPage() {
           Import ccusage snapshots
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-          Exact files are rejected, overlapping days are diffed, and only new or
-          revised observations are promoted.
+          Exact datasets are skipped globally, overlapping days are diffed, and
+          only new or revised observations are promoted.
         </p>
       </header>
 
@@ -101,7 +111,7 @@ export default async function ImportsPage() {
                     </td>
                     <td className="py-3 font-mono text-slate-600">
                       {item.raw_sha256.slice(0, 10)}
-                      {item.cross_machine_match ? " · cross-machine" : ""}
+                      {item.cross_machine_match ? " · cross-machine duplicate" : ""}
                     </td>
                   </tr>
                 );

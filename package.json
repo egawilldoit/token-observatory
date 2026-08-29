@@ -5,7 +5,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npx --yes tsx@4.23.12 --test tests/*.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.1",

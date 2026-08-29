@@ -51,6 +51,15 @@ function normalizedDate(row: JsonObject) {
         : null;
 
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+
+  const parsed = new Date(value + "T00:00:00Z");
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    return null;
+  }
+
   return value;
 }
 
@@ -158,7 +167,11 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
 
     for (const agentRow of agentRows) {
       const agent = normalizedAgent(agentRow.agent);
-      if (!agent) continue;
+      if (!agent) {
+        throw new Error(
+          "A per-agent row is missing a valid agent on " + usageDate + ".",
+        );
+      }
 
       const observation = observationFrom(agentRow, agent, usageDate);
       const key = agent + "|" + usageDate;
@@ -174,15 +187,23 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
       agentTotal += observation.reported_total_tokens;
     }
 
-    const dayTotal = numberValue(day.totalTokens);
-    if (dayTotal > 0 && agentTotal > 0 && dayTotal !== agentTotal) {
-      warnings.push(
-        "Agent totals differ from the day total on " +
-          usageDate +
-          " by " +
-          String(dayTotal - agentTotal) +
-          " tokens.",
-      );
+    if (day.totalTokens !== undefined && day.totalTokens !== null) {
+      const dayTotal = numberValue(day.totalTokens, Number.NaN);
+      if (!Number.isSafeInteger(dayTotal) || dayTotal < 0) {
+        throw new Error("Invalid day total on " + usageDate + ".");
+      }
+
+      if (agentTotal !== dayTotal) {
+        throw new Error(
+          "Per-agent totals do not reconcile with the day total on " +
+            usageDate +
+            ": agents=" +
+            agentTotal +
+            ", day=" +
+            dayTotal +
+            ".",
+        );
+      }
     }
   }
 
