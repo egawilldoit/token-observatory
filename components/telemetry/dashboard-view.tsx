@@ -11,7 +11,6 @@ import {
   Gauge,
   Layers3,
   Loader2,
-  Server,
   Sigma,
 } from "lucide-react";
 import { useMemo, useState } from "react";
