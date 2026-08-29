@@ -8,6 +8,7 @@ import { sha256Buffer } from "@/lib/ccusage/hash";
 import { parseCcusageDaily } from "@/lib/ccusage/parser";
 import type { CurrentDailyUsageRow } from "@/lib/ccusage/types";
 import {
+  decodeUtf8Strict,
   isCrossOriginRequest,
   requestExceedsBytes,
 } from "@/lib/http/request";
@@ -237,7 +238,7 @@ export async function POST(request: Request) {
 
   let decoded: string;
   try {
-    decoded = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    decoded = decodeUtf8Strict(buffer);
   } catch {
     return NextResponse.json(
       { error: "File is not valid UTF-8." },
