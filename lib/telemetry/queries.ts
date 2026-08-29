@@ -99,7 +99,7 @@ export async function getMachineCollectionHints() {
     const since = nextSinceFromDate(lastDate);
     return {
       ...machine,
-      lastUsageDate: lastDate,
+      lastAcceptedScopeEnd: lastDate,
       nextSince: since,
       command: buildCcusageCommand(since),
     };
