@@ -46,8 +46,9 @@ a three-calendar-day overlap.
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
    - `SUPABASE_SECRET_KEY`
    - `TOKEN_OBSERVATORY_ALLOWED_EMAILS`
-4. Create the allowed user account(s) in Supabase Auth. The application does not
-   expose public self-sign-up.
+4. Disable new-user signups in the dedicated Supabase Auth project, then create
+   the allowed user account(s) administratively. The application also redirects
+   all signup UI routes back to login.
 5. Apply the committed Supabase migrations in order:
 
 ```
