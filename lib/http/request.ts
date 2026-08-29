@@ -1,4 +1,8 @@
 export function isCrossOriginRequest(request: Request) {
+  if (request.headers.get("sec-fetch-site") === "cross-site") {
+    return true;
+  }
+
   const origin = request.headers.get("origin");
   if (!origin) return false;
 
