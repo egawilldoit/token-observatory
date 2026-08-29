@@ -68,6 +68,7 @@ export function DashboardView({
 }) {
   const [machine, setMachine] = useState("all");
   const [agent, setAgent] = useState("all");
+  const [granularity, setGranularity] = useState<"day" | "week" | "month">("day");
 
   const agents = useMemo(
     () => [...new Set(rows.map((row) => row.agent))].sort(),
@@ -101,18 +102,30 @@ export function DashboardView({
     [filtered],
   );
 
-  const byDay = useMemo(() => {
+  const byPeriod = useMemo(() => {
     const values = new Map<string, number>();
-    for (const row of filtered) {
-      values.set(
-        row.usage_date,
-        (values.get(row.usage_date) ?? 0) + row.reported_total_tokens,
-      );
+
+    function periodKey(date: string) {
+      if (granularity === "month") return date.slice(0, 7);
+      if (granularity === "week") {
+        const value = new Date(date + "T12:00:00Z");
+        const day = value.getUTCDay();
+        const mondayOffset = day === 0 ? -6 : 1 - day;
+        value.setUTCDate(value.getUTCDate() + mondayOffset);
+        return value.toISOString().slice(0, 10);
+      }
+      return date;
     }
+
+    for (const row of filtered) {
+      const key = periodKey(row.usage_date);
+      values.set(key, (values.get(key) ?? 0) + row.reported_total_tokens);
+    }
+
     return [...values.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, total]) => ({ date, total }));
-  }, [filtered]);
+  }, [filtered, granularity]);
 
   const byAgent = useMemo(() => {
     const values = new Map<string, number>();
@@ -133,7 +146,7 @@ export function DashboardView({
     return [...values.entries()].sort((a, b) => b[1] - a[1]);
   }, [filtered]);
 
-  const maxDay = Math.max(...byDay.map((day) => day.total), 1);
+  const maxPeriod = Math.max(...byPeriod.map((period) => period.total), 1);
   const maxAgent = Math.max(...byAgent.map((item) => item[1]), 1);
   const maxMachine = Math.max(...byMachine.map((item) => item[1]), 1);
   const cacheShare = totals.total ? (totals.cache / totals.total) * 100 : 0;
@@ -155,6 +168,23 @@ export function DashboardView({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <div className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1">
+            {(["day", "week", "month"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setGranularity(value)}
+                className={[
+                  "rounded-lg px-3 py-1.5 text-xs capitalize transition",
+                  granularity === value
+                    ? "bg-white/[0.09] text-white"
+                    : "text-slate-500 hover:text-slate-300",
+                ].join(" ")}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
           <select
             value={machine}
             onChange={(event) => setMachine(event.target.value)}
@@ -236,20 +266,26 @@ export function DashboardView({
             <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5">
               <div className="mb-6 flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold">Daily burn</h2>
+                  <h2 className="font-semibold">
+                    {granularity === "day"
+                      ? "Daily burn"
+                      : granularity === "week"
+                        ? "Weekly burn"
+                        : "Monthly burn"}
+                  </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    Reported total tokens by calendar day
+                    Reported total tokens grouped from canonical daily truth
                   </p>
                 </div>
                 <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
-                  {byDay.length} days
+                  {byPeriod.length} {granularity === "day" ? "days" : granularity === "week" ? "weeks" : "months"}
                 </span>
               </div>
 
               <div className="flex h-72 items-end gap-1 overflow-x-auto border-b border-white/10 pb-1">
-                {byDay.map((day, index) => {
-                  const height = Math.max(2, (day.total / maxDay) * 100);
-                  const labelEvery = byDay.length > 20 ? 5 : 2;
+                {byPeriod.map((day, index) => {
+                  const height = Math.max(2, (day.total / maxPeriod) * 100);
+                  const labelEvery = byPeriod.length > 20 ? 5 : 2;
                   return (
                     <div
                       key={day.date}
@@ -265,7 +301,9 @@ export function DashboardView({
                       />
                       <span className="mt-2 h-4 text-center text-[9px] text-slate-600">
                         {index % labelEvery === 0
-                          ? day.date.slice(8)
+                          ? granularity === "month"
+                            ? day.date.slice(5)
+                            : day.date.slice(8)
                           : ""}
                       </span>
                     </div>

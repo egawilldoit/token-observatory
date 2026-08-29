@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
   if (existing) {
     const duplicateId = randomUUID();
-    await supabase.from("imports").insert({
+    const { error: duplicateAuditError } = await supabase.from("imports").insert({
       id: duplicateId,
       machine_id: machineId,
       filename: safeFilename(file.name),
@@ -104,6 +104,13 @@ export async function POST(request: Request) {
       duplicate_of_import_id: existing.id,
       processed_at: new Date().toISOString(),
     });
+
+    if (duplicateAuditError) {
+      return NextResponse.json(
+        { error: "Could not record duplicate import: " + duplicateAuditError.message },
+        { status: 500 },
+      );
+    }
 
     const since = existing.scope_end
       ? nextSinceFromDate(existing.scope_end)
@@ -190,7 +197,7 @@ export async function POST(request: Request) {
   const { error: storageError } = await supabase.storage
     .from(RAW_IMPORT_BUCKET)
     .upload(storagePath, buffer, {
-      contentType: file.type || "application/json",
+      contentType: "application/json",
       upsert: false,
     });
 
