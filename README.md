@@ -54,6 +54,7 @@ a three-calendar-day overlap.
 ```
 supabase/migrations/20260829_001_ccusage_v1.sql
 supabase/migrations/20260829_002_collection_state.sql
+supabase/migrations/20260830_003_model_telemetry.sql
 ```
 
 The migrations create:
@@ -63,7 +64,11 @@ The migrations create:
 - `daily_usage_observations`
 - `v_current_daily_usage`
 - `v_machine_collection_state`
+- `daily_model_usage_observations`
+- `v_current_daily_model_usage`
 - `process_ccusage_import(...)`
+- `process_ccusage_import_v2(...)`
+- `backfill_ccusage_models(...)`
 - private Storage bucket `raw-imports`
 - per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
 
@@ -100,3 +105,16 @@ dedupe rules.
 Sessions, projects, canonical model mapping, pricing provenance, and semantic
 mirror/fork detection for *non-identical* exports are future layers. Raw
 `--breakdown` files are retained so those dimensions can be backfilled.
+
+
+## Model telemetry
+
+Exports generated with `--breakdown` preserve ccusage's per-model token and
+cost attribution. Model observations are revisioned independently at
+`machine × agent × model × day`, while headline totals continue to use the
+canonical agent/day view. This prevents model enrichment from changing or
+double-counting the certified token total.
+
+Existing processed imports can be enriched from their private raw Storage object
+through the authenticated `POST /api/models/backfill` route. The operation is
+idempotent and only inserts missing model observations.

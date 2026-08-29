@@ -27,6 +27,8 @@ type ImportResponse = {
   duplicateOfImportId?: string;
   duplicateOfMachineId?: string;
   crossMachineMatch?: boolean;
+  modelBackfilled?: number;
+  models?: string[];
   summary?: {
     new: number;
     revised: number;
@@ -399,6 +401,15 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
                   </span>
                 </div>
               </>
+            ) : null}
+
+            {result.modelBackfilled !== undefined ? (
+              <p className="mt-4 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.05] p-3 text-xs leading-5 text-cyan-100/80">
+                Model enrichment:{" "}
+                <b>{result.modelBackfilled.toLocaleString()}</b> model
+                observation{result.modelBackfilled === 1 ? "" : "s"} added
+                without changing canonical token totals.
+              </p>
             ) : null}
 
             {result.nextCommand ? (

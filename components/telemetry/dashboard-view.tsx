@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BarChart3,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
@@ -9,17 +10,37 @@ import {
   Database,
   Gauge,
   Layers3,
-  Server,
+  Loader2,
   Sigma,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import type { CurrentDailyUsageRow } from "@/lib/ccusage/types";
+import type {
+  CurrentDailyModelUsageRow,
+  CurrentDailyUsageRow,
+} from "@/lib/ccusage/types";
 import type {
   ImportRow,
   MachineCollectionHint,
   MachineRow,
 } from "@/lib/telemetry/queries";
+
+type Granularity = "day" | "week" | "month";
+type RangeKey = "all" | "7d" | "30d" | "90d";
+
+type TokenRow = {
+  machine_id: string;
+  agent: string;
+  usage_date: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  reported_total_tokens: number;
+  accounting_delta_tokens: number;
+  reported_cost_usd: number | null;
+};
 
 function compact(value: number) {
   if (Math.abs(value) >= 1_000_000_000) {
@@ -59,10 +80,17 @@ function formatTimestamp(value: string | null | undefined) {
   }).format(date);
 }
 
-function formatPeriodLabel(
-  value: string,
-  granularity: "day" | "week" | "month",
-) {
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(value + "T12:00:00Z"));
+}
+
+function formatPeriodLabel(value: string, granularity: Granularity) {
   if (granularity === "month") {
     const [year, month] = value.split("-").map(Number);
     return new Intl.DateTimeFormat("en-US", {
@@ -86,6 +114,40 @@ function niceCeiling(value: number) {
   const nice =
     fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
   return nice * power;
+}
+
+function summarize(rows: TokenRow[]) {
+  return rows.reduce(
+    (acc, row) => {
+      acc.total += row.reported_total_tokens;
+      acc.input += row.input_tokens;
+      acc.output += row.output_tokens;
+      acc.cache += row.cache_read_tokens;
+      acc.cacheCreation += row.cache_creation_tokens;
+      acc.delta += row.accounting_delta_tokens;
+      if (row.reported_cost_usd !== null) {
+        acc.cost += row.reported_cost_usd;
+        acc.costRows += 1;
+      }
+      return acc;
+    },
+    {
+      total: 0,
+      input: 0,
+      output: 0,
+      cache: 0,
+      cacheCreation: 0,
+      delta: 0,
+      cost: 0,
+      costRows: 0,
+    },
+  );
+}
+
+function subtractDays(value: string, days: number) {
+  const date = new Date(value + "T12:00:00Z");
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
 }
 
 function Metric({
@@ -123,14 +185,21 @@ function Metric({
         <p className="truncate text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
           {label}
         </p>
-        <span className={"grid h-8 w-8 shrink-0 place-items-center rounded-lg border " + accentClass}>
+        <span
+          className={
+            "grid h-8 w-8 shrink-0 place-items-center rounded-lg border " +
+            accentClass
+          }
+        >
           <Icon className="h-4 w-4" />
         </span>
       </div>
       <p className="mt-3 text-[1.7rem] font-semibold leading-none tracking-[-0.045em] text-slate-50">
         {value}
       </p>
-      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-500">{detail}</p>
+      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-500">
+        {detail}
+      </p>
       {progress !== undefined ? (
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.06]">
           <div
@@ -153,63 +222,136 @@ const agentBarClasses = [
 
 export function DashboardView({
   rows,
+  modelRows,
   machines,
   recentImports,
   collectionHints,
 }: {
   rows: CurrentDailyUsageRow[];
+  modelRows: CurrentDailyModelUsageRow[];
   machines: MachineRow[];
   recentImports: ImportRow[];
   collectionHints: MachineCollectionHint[];
 }) {
+  const router = useRouter();
   const [machine, setMachine] = useState("all");
   const [agent, setAgent] = useState("all");
-  const [granularity, setGranularity] =
-    useState<"day" | "week" | "month">("day");
+  const [model, setModel] = useState("all");
+  const [range, setRange] = useState<RangeKey>("all");
+  const [granularity, setGranularity] = useState<Granularity>("day");
   const [copied, setCopied] = useState(false);
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
+
+  const latestUsageDate = useMemo(
+    () => [...rows.map((row) => row.usage_date)].sort().at(-1) ?? null,
+    [rows],
+  );
+
+  const rangeStart = useMemo(() => {
+    if (!latestUsageDate || range === "all") return null;
+    const days = range === "7d" ? 6 : range === "30d" ? 29 : 89;
+    return subtractDays(latestUsageDate, days);
+  }, [latestUsageDate, range]);
 
   const agents = useMemo(
     () => [...new Set(rows.map((row) => row.agent))].sort(),
     [rows],
   );
 
-  const filtered = useMemo(
+  const scopedAgentRows = useMemo(
     () =>
       rows.filter(
         (row) =>
           (machine === "all" || row.machine_id === machine) &&
-          (agent === "all" || row.agent === agent),
+          (agent === "all" || row.agent === agent) &&
+          (!rangeStart || row.usage_date >= rangeStart),
       ),
-    [agent, machine, rows],
+    [agent, machine, rangeStart, rows],
   );
 
-  const totals = useMemo(
+  const models = useMemo(
     () =>
-      filtered.reduce(
-        (acc, row) => {
-          acc.total += row.reported_total_tokens;
-          acc.input += row.input_tokens;
-          acc.output += row.output_tokens;
-          acc.cache += row.cache_read_tokens;
-          acc.delta += row.accounting_delta_tokens;
-          if (row.reported_cost_usd !== null) {
-            acc.cost += row.reported_cost_usd;
-            acc.costRows += 1;
-          }
-          return acc;
-        },
-        {
-          total: 0,
-          input: 0,
-          output: 0,
-          cache: 0,
-          delta: 0,
-          cost: 0,
-          costRows: 0,
-        },
-      ),
-    [filtered],
+      [
+        ...new Set(
+          modelRows
+            .filter(
+              (row) =>
+                (machine === "all" || row.machine_id === machine) &&
+                (agent === "all" || row.agent === agent) &&
+                (!rangeStart || row.usage_date >= rangeStart),
+            )
+            .map((row) => row.model),
+        ),
+      ].sort(),
+    [agent, machine, modelRows, rangeStart],
   );
+
+  const scopedModelRows = useMemo(
+    () =>
+      modelRows.filter(
+        (row) =>
+          (machine === "all" || row.machine_id === machine) &&
+          (agent === "all" || row.agent === agent) &&
+          (model === "all" || row.model === model) &&
+          (!rangeStart || row.usage_date >= rangeStart),
+      ),
+    [agent, machine, model, modelRows, rangeStart],
+  );
+
+  const displayRows: TokenRow[] =
+    model === "all" ? scopedAgentRows : scopedModelRows;
+  const totals = useMemo(() => summarize(displayRows), [displayRows]);
+  const agentTotals = useMemo(
+    () => summarize(scopedAgentRows),
+    [scopedAgentRows],
+  );
+
+  const allScopedModelRows = useMemo(
+    () =>
+      modelRows.filter(
+        (row) =>
+          (machine === "all" || row.machine_id === machine) &&
+          (agent === "all" || row.agent === agent) &&
+          (!rangeStart || row.usage_date >= rangeStart),
+      ),
+    [agent, machine, modelRows, rangeStart],
+  );
+
+  const modelComponentTotal = useMemo(
+    () =>
+      allScopedModelRows.reduce(
+        (total, row) =>
+          total +
+          row.input_tokens +
+          row.output_tokens +
+          row.cache_read_tokens +
+          row.cache_creation_tokens,
+        0,
+      ),
+    [allScopedModelRows],
+  );
+  const agentComponentTotal =
+    agentTotals.input +
+    agentTotals.output +
+    agentTotals.cache +
+    agentTotals.cacheCreation;
+  const modelCoverage = agentComponentTotal
+    ? (modelComponentTotal / agentComponentTotal) * 100
+    : 0;
+
+  const byDay = useMemo(() => {
+    const values = new Map<string, number>();
+    for (const row of displayRows) {
+      values.set(
+        row.usage_date,
+        (values.get(row.usage_date) ?? 0) + row.reported_total_tokens,
+      );
+    }
+    return [...values.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, total]) => ({ date, total }));
+  }, [displayRows]);
 
   const byPeriod = useMemo(() => {
     const values = new Map<string, number>();
@@ -226,7 +368,7 @@ export function DashboardView({
       return date;
     }
 
-    for (const row of filtered) {
+    for (const row of displayRows) {
       const key = periodKey(row.usage_date);
       values.set(key, (values.get(key) ?? 0) + row.reported_total_tokens);
     }
@@ -234,26 +376,78 @@ export function DashboardView({
     return [...values.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, total]) => ({ date, total }));
-  }, [filtered, granularity]);
+  }, [displayRows, granularity]);
 
   const byAgent = useMemo(() => {
     const values = new Map<string, number>();
-    for (const row of filtered) {
+    for (const row of displayRows) {
       values.set(row.agent, (values.get(row.agent) ?? 0) + row.reported_total_tokens);
     }
     return [...values.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
+  }, [displayRows]);
 
   const byMachine = useMemo(() => {
     const values = new Map<string, number>();
-    for (const row of filtered) {
+    for (const row of displayRows) {
       values.set(
         row.machine_id,
         (values.get(row.machine_id) ?? 0) + row.reported_total_tokens,
       );
     }
     return [...values.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
+  }, [displayRows]);
+
+  const topModels = useMemo(() => {
+    const values = new Map<
+      string,
+      {
+        model: string;
+        total: number;
+        input: number;
+        output: number;
+        cache: number;
+        cacheCreation: number;
+        cost: number;
+        costRows: number;
+        agents: Set<string>;
+        days: Set<string>;
+      }
+    >();
+
+    for (const row of scopedModelRows) {
+      const current = values.get(row.model) ?? {
+        model: row.model,
+        total: 0,
+        input: 0,
+        output: 0,
+        cache: 0,
+        cacheCreation: 0,
+        cost: 0,
+        costRows: 0,
+        agents: new Set<string>(),
+        days: new Set<string>(),
+      };
+      current.total += row.reported_total_tokens;
+      current.input += row.input_tokens;
+      current.output += row.output_tokens;
+      current.cache += row.cache_read_tokens;
+      current.cacheCreation += row.cache_creation_tokens;
+      if (row.reported_cost_usd !== null) {
+        current.cost += row.reported_cost_usd;
+        current.costRows += 1;
+      }
+      current.agents.add(row.agent);
+      current.days.add(row.usage_date);
+      values.set(row.model, current);
+    }
+
+    return [...values.values()].sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [scopedModelRows]);
+
+  const modelAttributedTotal = scopedModelRows.reduce(
+    (total, row) => total + row.reported_total_tokens,
+    0,
+  );
 
   const visibleImports = useMemo(
     () =>
@@ -283,15 +477,55 @@ export function DashboardView({
   const cacheShare = totals.total ? (totals.cache / totals.total) * 100 : 0;
   const inputShare = totals.total ? (totals.input / totals.total) * 100 : 0;
   const outputShare = totals.total ? (totals.output / totals.total) * 100 : 0;
-  const costCoverage = filtered.length
-    ? (totals.costRows / filtered.length) * 100
+  const costCoverage = displayRows.length
+    ? (totals.costRows / displayRows.length) * 100
     : 0;
+  const activeDays = byDay.filter((item) => item.total > 0).length;
+  const averageActiveDay = activeDays ? totals.total / activeDays : 0;
+  const peakDay = [...byDay].sort((a, b) => b.total - a.total)[0] ?? null;
 
   async function copyCommand() {
     if (!activeCollection?.command) return;
     await navigator.clipboard.writeText(activeCollection.command);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function backfillModels() {
+    setBackfillBusy(true);
+    setBackfillMessage(null);
+
+    try {
+      const response = await fetch("/api/models/backfill", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        insertedModelRows?: number;
+        processedImports?: number;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Model backfill failed.");
+      }
+
+      setBackfillMessage(
+        "Loaded " +
+          Number(payload.insertedModelRows ?? 0).toLocaleString() +
+          " model observations from " +
+          Number(payload.processedImports ?? 0).toLocaleString() +
+          " stored import(s).",
+      );
+      router.refresh();
+    } catch (error) {
+      setBackfillMessage(
+        error instanceof Error ? error.message : "Model backfill failed.",
+      );
+    } finally {
+      setBackfillBusy(false);
+    }
   }
 
   return (
@@ -305,20 +539,51 @@ export function DashboardView({
             Token burn, without snapshot inflation.
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-            Canonical daily truth across every accepted ccusage import.
+            Canonical daily truth with agent, model, cost and source detail.
           </p>
         </div>
 
-        <div className="flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:items-center xl:justify-end">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400">
+        <div className="flex min-w-0 flex-col items-stretch gap-3 xl:items-end">
+          <div className="flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400 xl:self-end">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             <span className="whitespace-nowrap">Data up to</span>
             <strong className="whitespace-nowrap font-medium text-slate-200">
-              {formatTimestamp(latestProcessed?.processed_at ?? latestProcessed?.created_at)}
+              {formatTimestamp(
+                latestProcessed?.processed_at ?? latestProcessed?.created_at,
+              )}
             </strong>
           </div>
 
-          <div className="flex min-w-0 flex-wrap gap-2">
+          <div className="flex min-w-0 flex-wrap justify-start gap-2 xl:justify-end">
+            <div
+              role="group"
+              aria-label="Time range"
+              className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1"
+            >
+              {(
+                [
+                  ["all", "All"],
+                  ["90d", "90D"],
+                  ["30d", "30D"],
+                  ["7d", "7D"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={range === value}
+                  onClick={() => setRange(value)}
+                  className={[
+                    "rounded-lg px-2.5 py-1.5 text-xs transition",
+                    range === value
+                      ? "bg-white/[0.09] text-white"
+                      : "text-slate-500 hover:text-slate-300",
+                  ].join(" ")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div
               role="group"
               aria-label="Aggregation granularity"
@@ -331,7 +596,7 @@ export function DashboardView({
                   aria-pressed={granularity === value}
                   onClick={() => setGranularity(value)}
                   className={[
-                    "rounded-lg px-3 py-1.5 text-xs capitalize transition",
+                    "rounded-lg px-2.5 py-1.5 text-xs capitalize transition",
                     granularity === value
                       ? "bg-white/[0.09] text-white"
                       : "text-slate-500 hover:text-slate-300",
@@ -344,7 +609,10 @@ export function DashboardView({
             <select
               aria-label="Filter by machine"
               value={machine}
-              onChange={(event) => setMachine(event.target.value)}
+              onChange={(event) => {
+                setMachine(event.target.value);
+                setModel("all");
+              }}
               className="h-10 min-w-0 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
             >
               <option value="all">All machines</option>
@@ -357,11 +625,28 @@ export function DashboardView({
             <select
               aria-label="Filter by agent"
               value={agent}
-              onChange={(event) => setAgent(event.target.value)}
+              onChange={(event) => {
+                setAgent(event.target.value);
+                setModel("all");
+              }}
               className="h-10 min-w-0 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
             >
               <option value="all">All agents</option>
               {agents.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter by model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              disabled={models.length === 0}
+              className="h-10 min-w-0 max-w-[260px] rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1 disabled:opacity-40"
+            >
+              <option value="all">All models</option>
+              {models.map((item) => (
                 <option key={item} value={item}>
                   {item}
                 </option>
@@ -383,16 +668,20 @@ export function DashboardView({
         <>
           <section className="mt-7 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
             <Metric
-              label="Total tokens"
+              label={model === "all" ? "Total tokens" : "Model tokens"}
               value={compact(totals.total)}
-              detail={totals.total.toLocaleString() + " exact"}
+              detail={
+                model === "all"
+                  ? totals.total.toLocaleString() + " exact"
+                  : model
+              }
               icon={Sigma}
               accent="cyan"
             />
             <Metric
               label="Cache read"
               value={compact(totals.cache)}
-              detail={cacheShare.toFixed(1) + "% of reported total"}
+              detail={cacheShare.toFixed(1) + "% of selected total"}
               icon={Layers3}
               accent="emerald"
               progress={cacheShare}
@@ -400,7 +689,7 @@ export function DashboardView({
             <Metric
               label="Input tokens"
               value={compact(totals.input)}
-              detail={inputShare.toFixed(1) + "% of reported total"}
+              detail={inputShare.toFixed(1) + "% of selected total"}
               icon={Cpu}
               accent="violet"
               progress={inputShare}
@@ -408,28 +697,29 @@ export function DashboardView({
             <Metric
               label="Output tokens"
               value={compact(totals.output)}
-              detail={outputShare.toFixed(1) + "% of reported total"}
+              detail={outputShare.toFixed(1) + "% of selected total"}
               icon={Gauge}
               accent="cyan"
               progress={outputShare}
             />
             <Metric
-              label="Machines"
-              value={String(byMachine.length)}
+              label="Models"
+              value={String(models.length)}
               detail={
-                byMachine.length === 1
-                  ? "1 contributing source"
-                  : byMachine.length + " contributing sources"
+                modelRows.length
+                  ? modelCoverage.toFixed(1) + "% component coverage"
+                  : "Model detail not loaded"
               }
-              icon={Server}
+              icon={BarChart3}
               accent="blue"
+              progress={modelRows.length ? modelCoverage : undefined}
             />
             <Metric
               label="ccusage cost"
               value={totals.costRows ? money(totals.cost) : "—"}
               detail={
                 totals.costRows
-                  ? totals.costRows + "/" + filtered.length + " rows priced"
+                  ? totals.costRows + "/" + displayRows.length + " rows priced"
                   : "No reported cost data"
               }
               icon={CircleDollarSign}
@@ -450,11 +740,18 @@ export function DashboardView({
                         : "Monthly token burn"}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    Canonical tokens grouped from latest accepted rows only
+                    {model === "all"
+                      ? "Canonical tokens grouped from latest accepted rows"
+                      : "Model-attributed canonical tokens for " + model}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
-                  {byPeriod.length} {granularity === "day" ? "days" : granularity === "week" ? "weeks" : "months"}
+                  {byPeriod.length}{" "}
+                  {granularity === "day"
+                    ? "days"
+                    : granularity === "week"
+                      ? "weeks"
+                      : "months"}
                 </span>
               </div>
 
@@ -583,10 +880,154 @@ export function DashboardView({
             </div>
           </section>
 
+          <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.55fr)_340px]">
+            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-slate-100">Model usage</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Per-model attribution from ccusage modelBreakdowns
+                  </p>
+                </div>
+                {modelRows.length ? (
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
+                    {models.length} models · {modelCoverage.toFixed(1)}% covered
+                  </span>
+                ) : null}
+              </div>
+
+              {modelRows.length === 0 ? (
+                <div className="mt-5 rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/[0.035] p-5">
+                  <p className="text-sm font-medium text-slate-200">
+                    Model detail is still in the preserved raw snapshot.
+                  </p>
+                  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-500">
+                    Load it from the private raw import. This enriches model
+                    analytics only; the certified canonical token total is not
+                    re-added or changed.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={backfillModels}
+                    disabled={backfillBusy}
+                    className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-cyan-300 px-3 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-50"
+                  >
+                    {backfillBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Database className="h-3.5 w-3.5" />
+                    )}
+                    Load model details
+                  </button>
+                  {backfillMessage ? (
+                    <p className="mt-3 text-xs text-slate-400">
+                      {backfillMessage}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-5 overflow-x-auto">
+                  <table className="w-full min-w-[760px] text-left text-xs">
+                    <thead className="text-[10px] uppercase tracking-[0.12em] text-slate-600">
+                      <tr>
+                        <th className="pb-3 font-medium">Model</th>
+                        <th className="pb-3 font-medium">Agent</th>
+                        <th className="pb-3 text-right font-medium">Tokens</th>
+                        <th className="pb-3 text-right font-medium">Share</th>
+                        <th className="pb-3 text-right font-medium">Cache</th>
+                        <th className="pb-3 text-right font-medium">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.06]">
+                      {topModels.map((item) => {
+                        const share = modelAttributedTotal
+                          ? (item.total / modelAttributedTotal) * 100
+                          : 0;
+                        const cacheShareForModel = item.total
+                          ? (item.cache / item.total) * 100
+                          : 0;
+                        return (
+                          <tr key={item.model}>
+                            <td className="max-w-[300px] py-3 pr-4">
+                              <button
+                                type="button"
+                                onClick={() => setModel(item.model)}
+                                className="block max-w-full truncate font-mono text-[11px] font-medium text-slate-200 transition hover:text-cyan-300"
+                                title={item.model}
+                              >
+                                {item.model}
+                              </button>
+                              <span className="mt-1 block text-[10px] text-slate-600">
+                                {item.days.size} active day
+                                {item.days.size === 1 ? "" : "s"}
+                              </span>
+                            </td>
+                            <td className="py-3 pr-4 capitalize text-slate-400">
+                              {[...item.agents].join(", ")}
+                            </td>
+                            <td className="py-3 text-right tabular-nums text-slate-300">
+                              {compact(item.total)}
+                            </td>
+                            <td className="py-3 text-right tabular-nums text-slate-500">
+                              {share.toFixed(1)}%
+                            </td>
+                            <td className="py-3 text-right tabular-nums text-slate-500">
+                              {cacheShareForModel.toFixed(1)}%
+                            </td>
+                            <td className="py-3 text-right tabular-nums text-slate-400">
+                              {item.costRows ? money(item.cost) : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+              <h2 className="font-semibold text-slate-100">Usage detail</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Selected scope at a glance
+              </p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                {[
+                  ["Active days", activeDays.toLocaleString()],
+                  ["Avg / active day", compact(averageActiveDay)],
+                  ["Peak day", peakDay ? compact(peakDay.total) : "—"],
+                  ["Peak date", peakDay ? formatDate(peakDay.date) : "—"],
+                  ["Agents", String(byAgent.length)],
+                  ["Machines", String(byMachine.length)],
+                  [
+                    "Model coverage",
+                    modelRows.length ? modelCoverage.toFixed(1) + "%" : "—",
+                  ],
+                  ["Accounting delta", compact(totals.delta)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-white/[0.07] bg-black/15 p-3"
+                  >
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">
+                      {label}
+                    </p>
+                    <p className="mt-1.5 text-sm font-medium tabular-nums text-slate-300">
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
           <section className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2 2xl:grid-cols-[.9fr_1.25fr_.9fr]">
             <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
               <div className="mb-5">
-                <h2 className="font-semibold text-slate-100">Machine contribution</h2>
+                <h2 className="font-semibold text-slate-100">
+                  Machine contribution
+                </h2>
                 <p className="mt-1 text-xs text-slate-500">
                   Physical sources contributing to this view
                 </p>
@@ -715,9 +1156,7 @@ export function DashboardView({
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3">
                     <div className="min-w-0 text-[11px] leading-5 text-slate-600">
-                      <p className="truncate">
-                        {activeCollection.name}
-                      </p>
+                      <p className="truncate">{activeCollection.name}</p>
                       <p>
                         Next since:{" "}
                         <span className="text-emerald-300">

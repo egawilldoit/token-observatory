@@ -116,3 +116,22 @@ Sessions, projects, canonical model mapping, pricing provenance, and semantic
 cross-machine mirror/fork detection for non-identical exports are intentionally
 deferred. Raw `--breakdown` exports are preserved so these dimensions can be
 backfilled later.
+
+
+## Model telemetry
+
+`20260830_003_model_telemetry.sql` adds immutable per-model daily observations
+and `v_current_daily_model_usage`. The canonical grain is
+`machine_id × agent × model × usage_date`. Model component counters are
+validated against each agent row before promotion. Model revisions and
+tombstones are diffed independently from agent/day revisions.
+
+The existing agent/day view remains the authority for global headline totals.
+This is deliberate: ccusage model breakdowns can omit a model-level
+`totalTokens` field, so the parser derives a model total from its token
+components while retaining any parent accounting residual separately.
+
+For imports processed before model telemetry existed,
+`POST /api/models/backfill` reads the already-preserved private raw object,
+re-parses its model breakdowns, and idempotently inserts model observations
+against the original processed import.

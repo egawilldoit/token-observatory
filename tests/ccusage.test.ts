@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { diffDailyUsage } from "../lib/ccusage/diff";
+import {
+  diffDailyModelUsage,
+  diffDailyUsage,
+} from "../lib/ccusage/diff";
 import { parseCcusageDaily } from "../lib/ccusage/parser";
 import {
   buildCcusageCommand,
@@ -11,7 +14,9 @@ import {
   todayInTelemetryTimezone,
 } from "../lib/telemetry/config";
 import type {
+  CurrentDailyModelUsageRow,
   CurrentDailyUsageRow,
+  DailyModelUsageObservationInput,
   DailyUsageObservationInput,
 } from "../lib/ccusage/types";
 
@@ -34,6 +39,17 @@ function fixture(total = 300) {
             cacheCreationTokens: 0,
             totalTokens: 100,
             costUSD: 0,
+            modelsUsed: ["gpt-5.6-sol"],
+            modelBreakdowns: [
+              {
+                modelName: "gpt-5.6-sol",
+                inputTokens: 40,
+                outputTokens: 10,
+                cacheReadTokens: 50,
+                cacheCreationTokens: 0,
+                cost: 0,
+              },
+            ],
           },
           {
             agent: "opencode",
@@ -43,6 +59,17 @@ function fixture(total = 300) {
             cacheCreationTokens: 0,
             totalTokens: 200,
             costUSD: 0,
+            modelsUsed: ["deepseek-v4-flash"],
+            modelBreakdowns: [
+              {
+                modelName: "deepseek-v4-flash",
+                inputTokens: 50,
+                outputTokens: 20,
+                cacheReadTokens: 130,
+                cacheCreationTokens: 0,
+                cost: 0,
+              },
+            ],
           },
         ],
       },
@@ -65,6 +92,8 @@ test("parses reconciled unified per-agent daily usage", () => {
   assert.equal(parsed.scopeEnd, "2026-08-28");
   assert.equal(parsed.totals.reportedTotalTokens, 300);
   assert.deepEqual(parsed.agents, ["codex", "opencode"]);
+  assert.equal(parsed.modelRows.length, 2);
+  assert.deepEqual(parsed.models, ["deepseek-v4-flash", "gpt-5.6-sol"]);
 });
 
 test("rejects impossible calendar dates", () => {
@@ -277,4 +306,55 @@ test("rejects oversized or control-character agent identifiers", () => {
   const controlled = fixture();
   controlled.daily[0].agents[0].agent = "codex\u0000hidden";
   assert.throws(() => parseCcusageDaily(controlled), /missing a valid agent/);
+});
+
+
+test("rejects model breakdown components that do not reconcile to the agent", () => {
+  const payload = fixture();
+  payload.daily[0].agents[0].modelBreakdowns[0].cacheReadTokens = 49;
+
+  assert.throws(
+    () => parseCcusageDaily(payload),
+    /Per-model cacheReadTokens do not reconcile/,
+  );
+});
+
+test("diffs model rows independently and tombstones removed models", () => {
+  const parsed = parseCcusageDaily(fixture());
+  const current: CurrentDailyModelUsageRow[] = parsed.modelRows.map((row) => ({
+    ...row,
+    machine_id: "openclaw",
+  }));
+  const incoming: DailyModelUsageObservationInput[] = [parsed.modelRows[0]];
+
+  const result = diffDailyModelUsage(incoming, current);
+
+  assert.equal(result.unchangedRows.length, 1);
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].model, "deepseek-v4-flash");
+  assert.equal(result.removedRows[0].is_tombstone, true);
+  assert.equal(result.afterTotal, 100);
+});
+
+test("model migration is forward-only and exposes canonical model state", async () => {
+  const migration = await readFile(
+    new URL(
+      "../supabase/migrations/20260830_003_model_telemetry.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /daily_model_usage_observations/);
+  assert.match(migration, /v_current_daily_model_usage/);
+  assert.match(migration, /process_ccusage_import_v2/);
+  assert.match(migration, /backfill_ccusage_models/);
+  assert.match(
+    migration,
+    /unique\(import_id, agent, model, usage_date\)/,
+  );
+  assert.match(
+    migration,
+    /grant select on table public\.v_current_daily_model_usage to service_role/,
+  );
 });
