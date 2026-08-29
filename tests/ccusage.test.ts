@@ -242,3 +242,28 @@ test("rejects daily rows that disagree with top-level totals", () => {
     /Daily rows do not reconcile with top-level outputTokens/,
   );
 });
+
+
+test("tombstones a missing leading day when the server overlap starts earlier than visible rows", () => {
+  const source = parseCcusageDaily(fixture()).rows[0];
+  const current: CurrentDailyUsageRow[] = [
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+  ].map((usage_date) => ({
+    ...source,
+    usage_date,
+    usage_hash: "current-" + usage_date,
+    machine_id: "openclaw",
+  }));
+  const incoming: DailyUsageObservationInput[] = [current[1], current[2]];
+
+  const result = diffDailyUsage(incoming, current, {
+    scopeStart: "2026-08-26",
+    scopeEnd: "2026-08-28",
+  });
+
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].usage_date, "2026-08-26");
+  assert.equal(result.netChange, -100);
+});
