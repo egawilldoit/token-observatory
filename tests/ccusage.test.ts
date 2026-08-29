@@ -4,7 +4,12 @@ import { readFile } from "node:fs/promises";
 
 import { diffDailyUsage } from "../lib/ccusage/diff";
 import { parseCcusageDaily } from "../lib/ccusage/parser";
-import { buildCcusageCommand, nextSinceFromDate } from "../lib/telemetry/config";
+import {
+  buildCcusageCommand,
+  isFutureTelemetryDate,
+  nextSinceFromDate,
+  todayInTelemetryTimezone,
+} from "../lib/telemetry/config";
 import type {
   CurrentDailyUsageRow,
   DailyUsageObservationInput,
@@ -167,4 +172,54 @@ test("rejects missing required token counters", () => {
   Reflect.deleteProperty(payload.daily[0].agents[0], "inputTokens");
 
   assert.throws(() => parseCcusageDaily(payload), /Invalid inputTokens/);
+});
+
+
+test("tombstones a whole missing day inside an overlapping snapshot", () => {
+  const source = parseCcusageDaily(fixture()).rows[0];
+  const current: CurrentDailyUsageRow[] = [
+    "2026-08-26",
+    "2026-08-27",
+    "2026-08-28",
+  ].map((usage_date) => ({
+    ...source,
+    usage_date,
+    usage_hash: "hash-" + usage_date,
+    machine_id: "openclaw",
+  }));
+
+  const incoming = [current[0], current[2]].map(
+    ({ machine_id: _machineId, ...row }) => row,
+  );
+
+  const result = diffDailyUsage(incoming, current);
+
+  assert.equal(result.removedRows.length, 1);
+  assert.equal(result.removedRows[0].usage_date, "2026-08-27");
+  assert.equal(result.netChange, -100);
+});
+
+test("uses the Africa/Casablanca calendar boundary for future-date rejection", () => {
+  const now = new Date("2026-08-29T23:30:00Z");
+
+  assert.equal(todayInTelemetryTimezone(now), "2026-08-30");
+  assert.equal(isFutureTelemetryDate("2026-08-30", now), false);
+  assert.equal(isFutureTelemetryDate("2026-08-31", now), true);
+});
+
+test("migration exposes accepted scope state independent of current usage rows", async () => {
+  const migration = await readFile(
+    new URL("../supabase/migrations/20260829_001_ccusage_v1.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(migration, /v_machine_collection_state/);
+  assert.match(
+    migration,
+    /max\(i\.scope_end\) filter \(where i\.status = 'processed'\)/,
+  );
+  assert.match(
+    migration,
+    /grant select on table public\.v_machine_collection_state to service_role/,
+  );
 });
