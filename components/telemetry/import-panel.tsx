@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Copy,
   FileJson2,
   Loader2,
   Terminal,
@@ -77,6 +78,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
   const [machineId, setMachineId] = useState(() => machines[0]?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [commandCopied, setCommandCopied] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +98,18 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
       setMachineId(selected.id);
     }
   }, [machineId, selected]);
+
+  async function copyCommand() {
+    if (!selected?.command) return;
+
+    try {
+      await navigator.clipboard.writeText(selected.command);
+      setCommandCopied(true);
+      window.setTimeout(() => setCommandCopied(false), 1600);
+    } catch {
+      setError("Could not copy the collection command.");
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -292,10 +306,21 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               </p>
             </div>
           </div>
-          <pre className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-black/25 p-4 text-xs leading-6 text-slate-300">
-            {selected?.command ||
-              "Collection command unavailable — reload after selecting a machine."}
-          </pre>
+          <div className="mt-4 flex min-w-0 items-start gap-2 rounded-2xl border border-white/10 bg-black/25 p-3">
+            <code className="min-w-0 flex-1 break-all text-xs leading-6 text-slate-300">
+              {selected?.command ||
+                "Collection command unavailable — reload after selecting a machine."}
+            </code>
+            <button
+              type="button"
+              onClick={copyCommand}
+              disabled={!selected?.command}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-[11px] text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200 disabled:opacity-40"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {commandCopied ? "Copied" : "Copy"}
+            </button>
+          </div>
           {selected?.lastAcceptedScopeEnd ? (
             <p className="mt-3 text-[11px] text-slate-600">
               Latest accepted scope end: {selected.lastAcceptedScopeEnd} · next since:{" "}
@@ -374,6 +399,17 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
                   </span>
                 </div>
               </>
+            ) : null}
+
+            {result.nextCommand ? (
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/15 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Next collection
+                </p>
+                <code className="mt-2 block break-all text-[11px] leading-5 text-slate-300">
+                  {result.nextCommand}
+                </code>
+              </div>
             ) : null}
 
             {result.crossMachineMatch ? (
