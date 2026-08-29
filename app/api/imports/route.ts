@@ -452,9 +452,21 @@ export async function POST(request: Request) {
     );
   }
 
+  const expectedOverlapStart = latestAccepted?.scope_end
+    ? nextSinceFromDate(latestAccepted.scope_end)
+    : null;
+  const coverageStart =
+    expectedOverlapStart && expectedOverlapStart < parsed.scopeStart
+      ? expectedOverlapStart
+      : parsed.scopeStart;
+
   const diff = diffDailyUsage(
     parsed.rows,
     (currentData ?? []) as CurrentDailyUsageRow[],
+    {
+      scopeStart: coverageStart,
+      scopeEnd: parsed.scopeEnd,
+    },
   );
   const rowsToWrite = [
     ...diff.newRows,
