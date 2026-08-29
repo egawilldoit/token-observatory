@@ -3,10 +3,16 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { getObservatoryAccess } from "@/lib/auth/require-user";
-import { diffDailyUsage } from "@/lib/ccusage/diff";
+import {
+  diffDailyModelUsage,
+  diffDailyUsage,
+} from "@/lib/ccusage/diff";
 import { sha256Buffer } from "@/lib/ccusage/hash";
 import { parseCcusageDaily } from "@/lib/ccusage/parser";
-import type { CurrentDailyUsageRow } from "@/lib/ccusage/types";
+import type {
+  CurrentDailyModelUsageRow,
+  CurrentDailyUsageRow,
+} from "@/lib/ccusage/types";
 import {
   decodeUtf8Strict,
   isCrossOriginRequest,
@@ -158,6 +164,53 @@ export async function POST(request: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const rawSha = sha256Buffer(buffer);
 
+  let decoded: string;
+  try {
+    decoded = decodeUtf8Strict(buffer);
+  } catch {
+    return NextResponse.json(
+      { error: "File is not valid UTF-8." },
+      { status: 400 },
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(decoded);
+  } catch {
+    return NextResponse.json(
+      { error: "File is not valid JSON." },
+      { status: 400 },
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = parseCcusageDaily(payload);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Unsupported ccusage JSON.",
+      },
+      { status: 422 },
+    );
+  }
+
+  if (isFutureTelemetryDate(parsed.scopeEnd)) {
+    return NextResponse.json(
+      {
+        error:
+          "Snapshot contains future-dated usage through " +
+          parsed.scopeEnd +
+          "; current telemetry date is " +
+          todayInTelemetryTimezone() +
+          ".",
+      },
+      { status: 422 },
+    );
+  }
+
   const staleBefore = new Date(
     Date.now() - STALE_IMPORT_MINUTES * 60 * 1000,
   ).toISOString();
@@ -207,6 +260,25 @@ export async function POST(request: Request) {
   }
 
   if (existing?.status === "processed") {
+    let modelBackfilled = 0;
+
+    if (parsed.modelRows.length > 0) {
+      const { data: modelBackfill, error: modelBackfillError } =
+        await supabase.rpc("backfill_ccusage_models", {
+          p_import_id: existing.id,
+          p_model_rows: parsed.modelRows,
+        });
+
+      if (modelBackfillError) {
+        return NextResponse.json(
+          { error: "Could not backfill model telemetry for this import." },
+          { status: 500 },
+        );
+      }
+
+      modelBackfilled = Number(modelBackfill?.insertedModelRows ?? 0);
+    }
+
     const duplicateId = randomUUID();
     const { error: duplicateAuditError } = await supabase.from("imports").insert({
       id: duplicateId,
@@ -234,57 +306,12 @@ export async function POST(request: Request) {
       importId: duplicateId,
       duplicateOfImportId: existing.id,
       crossMachineMatch: false,
+      modelBackfilled,
+      models: parsed.models,
       nextCommand: existing.scope_end
         ? buildCcusageCommand(nextSinceFromDate(existing.scope_end))
         : undefined,
     });
-  }
-
-  let decoded: string;
-  try {
-    decoded = decodeUtf8Strict(buffer);
-  } catch {
-    return NextResponse.json(
-      { error: "File is not valid UTF-8." },
-      { status: 400 },
-    );
-  }
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(decoded);
-  } catch {
-    return NextResponse.json(
-      { error: "File is not valid JSON." },
-      { status: 400 },
-    );
-  }
-
-  let parsed;
-  try {
-    parsed = parseCcusageDaily(payload);
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Unsupported ccusage JSON.",
-      },
-      { status: 422 },
-    );
-  }
-
-  if (isFutureTelemetryDate(parsed.scopeEnd)) {
-    return NextResponse.json(
-      {
-        error:
-          "Snapshot contains future-dated usage through " +
-          parsed.scopeEnd +
-          "; current telemetry date is " +
-          todayInTelemetryTimezone() +
-          ".",
-      },
-      { status: 422 },
-    );
   }
 
   const { data: latestAccepted, error: latestAcceptedError } = await supabase
@@ -456,6 +483,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const { data: currentModelData, error: currentModelError } = await supabase
+    .from("v_current_daily_model_usage")
+    .select("*")
+    .eq("machine_id", machineId);
+
+  if (currentModelError) {
+    await markFailed(importId, currentModelError.message);
+    return NextResponse.json(
+      { error: "Could not read canonical model usage state." },
+      { status: 500 },
+    );
+  }
+
   const expectedOverlapStart = latestAccepted?.scope_end
     ? nextSinceFromDate(latestAccepted.scope_end)
     : null;
@@ -478,6 +518,20 @@ export async function POST(request: Request) {
     ...diff.removedRows,
   ];
 
+  const modelDiff = diffDailyModelUsage(
+    parsed.modelRows,
+    (currentModelData ?? []) as CurrentDailyModelUsageRow[],
+    {
+      scopeStart: coverageStart,
+      scopeEnd: parsed.scopeEnd,
+    },
+  );
+  const modelRowsToWrite = [
+    ...modelDiff.newRows,
+    ...modelDiff.revisedRows,
+    ...modelDiff.removedRows,
+  ];
+
   const summary = {
     new: diff.newRows.length,
     revised: diff.revisedRows.length,
@@ -487,6 +541,13 @@ export async function POST(request: Request) {
     afterTotal: diff.afterTotal,
     netChange: diff.netChange,
     agents: parsed.agents,
+    models: parsed.models,
+    modelChanges: {
+      new: modelDiff.newRows.length,
+      revised: modelDiff.revisedRows.length,
+      removed: modelDiff.removedRows.length,
+      unchanged: modelDiff.unchangedRows.length,
+    },
     scopeStart: parsed.scopeStart,
     scopeEnd: parsed.scopeEnd,
     warnings: parsed.warnings,
@@ -494,9 +555,10 @@ export async function POST(request: Request) {
     crossMachineMatch: Boolean(sameHashElsewhere),
   };
 
-  const { error: rpcError } = await supabase.rpc("process_ccusage_import", {
+  const { error: rpcError } = await supabase.rpc("process_ccusage_import_v2", {
     p_import_id: importId,
     p_rows: rowsToWrite,
+    p_model_rows: modelRowsToWrite,
     p_summary: summary,
   });
 
