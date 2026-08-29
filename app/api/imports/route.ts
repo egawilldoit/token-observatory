@@ -152,7 +152,7 @@ export async function POST(request: Request) {
       status: "exact_duplicate",
       importId: duplicateId,
       duplicateOfImportId: existing.id,
-      crossMachineMatch: Boolean(sameHashElsewhere),
+      crossMachineMatch: false,
       nextCommand: existing.scope_end
         ? buildCcusageCommand(nextSinceFromDate(existing.scope_end))
         : undefined,
@@ -324,7 +324,7 @@ export async function POST(request: Request) {
     scopeEnd: parsed.scopeEnd,
     warnings: parsed.warnings,
     sourceShape: parsed.sourceShape,
-    crossMachineMatch: false,
+    crossMachineMatch: Boolean(sameHashElsewhere),
   };
 
   const { error: rpcError } = await supabase.rpc("process_ccusage_import", {
