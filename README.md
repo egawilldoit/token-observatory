@@ -48,13 +48,14 @@ a three-calendar-day overlap.
    - `TOKEN_OBSERVATORY_ALLOWED_EMAILS`
 4. Create the allowed user account(s) in Supabase Auth. The application does not
    expose public self-sign-up.
-5. Apply:
+5. Apply the committed Supabase migrations in order:
 
 ```
 supabase/migrations/20260829_001_ccusage_v1.sql
+supabase/migrations/20260829_002_collection_state.sql
 ```
 
-The migration creates:
+The migrations create:
 
 - `machines`
 - `imports`
