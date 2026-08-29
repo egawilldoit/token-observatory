@@ -258,6 +258,32 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
     },
   );
 
+  const reportedTotals = asObject(root.totals);
+  if (reportedTotals) {
+    const comparisons: Array<[TokenKey, number]> = [
+      ["inputTokens", totals.inputTokens],
+      ["outputTokens", totals.outputTokens],
+      ["cacheReadTokens", totals.cacheReadTokens],
+      ["cacheCreationTokens", totals.cacheCreationTokens],
+      ["totalTokens", totals.reportedTotalTokens],
+    ];
+
+    for (const [key, calculated] of comparisons) {
+      const reported = requiredToken(reportedTotals, key, "top-level totals");
+      if (reported !== calculated) {
+        throw new Error(
+          "Daily rows do not reconcile with top-level " +
+            key +
+            ": rows=" +
+            calculated +
+            ", totals=" +
+            reported +
+            ".",
+        );
+      }
+    }
+  }
+
   return {
     rows: parsedRows,
     scopeStart: dates[0],
