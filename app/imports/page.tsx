@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { AppShell } from "@/components/telemetry/app-shell";
 import { ImportPanel } from "@/components/telemetry/import-panel";
+import { TelemetryRouteLoading } from "@/components/telemetry/route-loading";
 import { SetupRequired } from "@/components/telemetry/setup-required";
 import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
@@ -22,15 +24,7 @@ function compact(value: unknown) {
   return number.toLocaleString();
 }
 
-export default async function ImportsPage() {
-  if (!isTelemetryConfigured()) {
-    return (
-      <AppShell>
-        <SetupRequired />
-      </AppShell>
-    );
-  }
-
+async function ImportsRuntime() {
   if (!(await hasObservatoryAccess())) {
     redirect("/auth/unauthorized");
   }
@@ -41,7 +35,7 @@ export default async function ImportsPage() {
   ]);
 
   return (
-    <AppShell>
+    <>
       <header>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
           Ingestion
@@ -50,8 +44,8 @@ export default async function ImportsPage() {
           Import ccusage snapshots
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-          Exact datasets are skipped globally, overlapping days are diffed, and
-          only new or revised observations are promoted.
+          Same-machine exact datasets are skipped, overlapping days are diffed,
+          and only canonical changes are promoted.
         </p>
       </header>
 
@@ -111,7 +105,7 @@ export default async function ImportsPage() {
                     </td>
                     <td className="py-3 font-mono text-slate-600">
                       {item.raw_sha256.slice(0, 10)}
-                      {item.cross_machine_match ? " · cross-machine duplicate" : ""}
+                      {item.cross_machine_match ? " · cross-machine match" : ""}
                     </td>
                   </tr>
                 );
@@ -127,6 +121,24 @@ export default async function ImportsPage() {
           </table>
         </div>
       </section>
+    </>
+  );
+}
+
+export default function ImportsPage() {
+  if (!isTelemetryConfigured()) {
+    return (
+      <AppShell>
+        <SetupRequired />
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <Suspense fallback={<TelemetryRouteLoading />}>
+        <ImportsRuntime />
+      </Suspense>
     </AppShell>
   );
 }
