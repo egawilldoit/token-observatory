@@ -1,5 +1,6 @@
-import { usageHash } from "./hash";
+import { modelUsageHash, usageHash } from "./hash";
 import type {
+  DailyModelUsageObservationInput,
   DailyUsageObservationInput,
   ParsedCcusageDaily,
 } from "./types";
@@ -38,6 +39,15 @@ function requiredToken(row: JsonObject, key: TokenKey, context: string) {
   return parsed;
 }
 
+function optionalToken(
+  row: JsonObject,
+  key: TokenKey,
+  context: string,
+): number | null {
+  if (row[key] === undefined || row[key] === null) return null;
+  return requiredToken(row, key, context);
+}
+
 function optionalCost(row: JsonObject, context: string) {
   for (const key of ["totalCost", "costUSD", "cost"]) {
     if (row[key] !== undefined && row[key] !== null) {
@@ -51,18 +61,29 @@ function optionalCost(row: JsonObject, context: string) {
   return null;
 }
 
-function normalizedAgent(value: unknown) {
+function normalizedIdentity(
+  value: unknown,
+  maxLength: number,
+): string | null {
   if (typeof value !== "string") return null;
-  const agent = value.trim().toLowerCase();
+  const normalized = value.trim().toLowerCase();
   if (
-    !agent ||
-    agent === "all" ||
-    agent.length > 128 ||
-    /[\u0000-\u001f\u007f]/.test(agent)
+    !normalized ||
+    normalized.length > maxLength ||
+    /[\u0000-\u001f\u007f]/.test(normalized)
   ) {
     return null;
   }
-  return agent;
+  return normalized;
+}
+
+function normalizedAgent(value: unknown) {
+  const agent = normalizedIdentity(value, 128);
+  return !agent || agent === "all" ? null : agent;
+}
+
+function normalizedModel(value: unknown) {
+  return normalizedIdentity(value, 256);
 }
 
 function normalizedDate(row: JsonObject) {
@@ -129,6 +150,76 @@ function observationFrom(
   };
 }
 
+function modelRowsFrom(agentRow: JsonObject) {
+  const direct = asObjects(agentRow.modelBreakdowns);
+  if (direct.length > 0) return direct;
+
+  const breakdown = asObject(agentRow.breakdown);
+  if (!breakdown) return [];
+
+  const rows: JsonObject[] = [];
+  for (const [modelName, value] of Object.entries(breakdown)) {
+    const object = asObject(value);
+    if (object) rows.push({ ...object, modelName });
+  }
+  return rows;
+}
+
+function modelObservationFrom(
+  row: JsonObject,
+  agent: string,
+  usageDate: string,
+): DailyModelUsageObservationInput {
+  const model = normalizedModel(row.modelName ?? row.model);
+  if (!model) {
+    throw new Error(
+      "A model breakdown is missing a valid model name for " +
+        agent +
+        " on " +
+        usageDate +
+        ".",
+    );
+  }
+
+  const context = agent + "/" + model + " on " + usageDate;
+  const input_tokens = requiredToken(row, "inputTokens", context);
+  const output_tokens = requiredToken(row, "outputTokens", context);
+  const cache_read_tokens = requiredToken(row, "cacheReadTokens", context);
+  const cache_creation_tokens = requiredToken(
+    row,
+    "cacheCreationTokens",
+    context,
+  );
+  const componentTotal =
+    input_tokens +
+    output_tokens +
+    cache_read_tokens +
+    cache_creation_tokens;
+  const reported_total_tokens =
+    optionalToken(row, "totalTokens", context) ?? componentTotal;
+  const reported_cost_usd = optionalCost(row, context);
+  const accounting_delta_tokens = reported_total_tokens - componentTotal;
+
+  const withoutHash = {
+    agent,
+    model,
+    usage_date: usageDate,
+    input_tokens,
+    output_tokens,
+    cache_read_tokens,
+    cache_creation_tokens,
+    reported_total_tokens,
+    accounting_delta_tokens,
+    reported_cost_usd,
+    is_tombstone: false,
+  };
+
+  return {
+    ...withoutHash,
+    usage_hash: modelUsageHash(withoutHash),
+  };
+}
+
 function topLevelDaily(payload: JsonObject) {
   if (Array.isArray(payload.daily)) {
     return {
@@ -157,6 +248,10 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
   if (days.length === 0) throw new Error("The ccusage daily report is empty.");
 
   const observations = new Map<string, DailyUsageObservationInput>();
+  const modelObservations = new Map<
+    string,
+    DailyModelUsageObservationInput
+  >();
   const warnings: string[] = [];
   const dates: string[] = [];
 
@@ -211,6 +306,88 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
       agentSums.cacheReadTokens += observation.cache_read_tokens;
       agentSums.cacheCreationTokens += observation.cache_creation_tokens;
       agentSums.totalTokens += observation.reported_total_tokens;
+
+      const modelRows = modelRowsFrom(agentRow);
+      if (modelRows.length === 0) {
+        if (
+          observation.input_tokens +
+            observation.output_tokens +
+            observation.cache_read_tokens +
+            observation.cache_creation_tokens >
+          0
+        ) {
+          warnings.push(
+            "No model breakdown for " + agent + " on " + usageDate + ".",
+          );
+        }
+        continue;
+      }
+
+      const modelSums = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      };
+
+      for (const modelRow of modelRows) {
+        const modelObservation = modelObservationFrom(
+          modelRow,
+          agent,
+          usageDate,
+        );
+        const modelKey =
+          agent + "|" + modelObservation.model + "|" + usageDate;
+        const previousModel = modelObservations.get(modelKey);
+
+        if (
+          previousModel &&
+          previousModel.usage_hash !== modelObservation.usage_hash
+        ) {
+          throw new Error(
+            "Conflicting model rows for " +
+              agent +
+              "/" +
+              modelObservation.model +
+              " on " +
+              usageDate +
+              " in one file.",
+          );
+        }
+
+        modelObservations.set(modelKey, modelObservation);
+        modelSums.inputTokens += modelObservation.input_tokens;
+        modelSums.outputTokens += modelObservation.output_tokens;
+        modelSums.cacheReadTokens += modelObservation.cache_read_tokens;
+        modelSums.cacheCreationTokens += modelObservation.cache_creation_tokens;
+      }
+
+      const componentComparisons: Array<
+        [keyof typeof modelSums, number]
+      > = [
+        ["inputTokens", observation.input_tokens],
+        ["outputTokens", observation.output_tokens],
+        ["cacheReadTokens", observation.cache_read_tokens],
+        ["cacheCreationTokens", observation.cache_creation_tokens],
+      ];
+
+      for (const [component, expected] of componentComparisons) {
+        if (modelSums[component] !== expected) {
+          throw new Error(
+            "Per-model " +
+              component +
+              " do not reconcile with " +
+              agent +
+              " on " +
+              usageDate +
+              ": models=" +
+              modelSums[component] +
+              ", agent=" +
+              expected +
+              ".",
+          );
+        }
+      }
     }
 
     for (const key of [
@@ -240,6 +417,11 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
   const parsedRows = [...observations.values()].sort((a, b) => {
     const byDate = a.usage_date.localeCompare(b.usage_date);
     return byDate || a.agent.localeCompare(b.agent);
+  });
+  const parsedModelRows = [...modelObservations.values()].sort((a, b) => {
+    const byDate = a.usage_date.localeCompare(b.usage_date);
+    const byAgent = a.agent.localeCompare(b.agent);
+    return byDate || byAgent || a.model.localeCompare(b.model);
   });
 
   if (parsedRows.length === 0) {
@@ -293,11 +475,13 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
 
   return {
     rows: parsedRows,
+    modelRows: parsedModelRows,
     scopeStart: dates[0],
     scopeEnd: dates[dates.length - 1],
     agents: [...new Set(parsedRows.map((row) => row.agent))].sort(),
+    models: [...new Set(parsedModelRows.map((row) => row.model))].sort(),
     sourceShape: shape,
-    warnings,
+    warnings: [...new Set(warnings)],
     totals,
   };
 }
