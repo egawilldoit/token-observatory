@@ -1,8 +1,7 @@
 # Token Observatory
 
 A Next.js + Supabase telemetry application for aggregating ccusage token
-consumption across several development machines without double-counting
-overlapping snapshots or exact duplicate datasets.
+consumption across several development machines without double-counting overlapping snapshots within each registered machine.
 
 ## V1 behavior
 
@@ -10,8 +9,9 @@ overlapping snapshots or exact duplicate datasets.
 - Generate a pinned ccusage daily JSON export with per-agent and model breakdowns.
 - Upload the JSON manually.
 - Preserve accepted raw files in a private Supabase Storage bucket.
-- Reject exact duplicate raw datasets globally by SHA-256, including when the same
-  bytes are submitted under a different machine identity.
+- Reject exact duplicate raw datasets by SHA-256 within the same machine.
+- Flag byte-identical exports seen on another machine without assuming they are
+  the same underlying usage event.
 - Permit only one active import per machine; stale processing imports are recovered
   automatically.
 - Validate calendar dates and require per-agent totals to reconcile with ccusage's
@@ -58,7 +58,7 @@ The migration creates:
 - `v_current_daily_usage`
 - `process_ccusage_import(...)`
 - private Storage bucket `raw-imports`
-- global active-raw-hash dedupe and one-processing-import-per-machine guards
+- per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.

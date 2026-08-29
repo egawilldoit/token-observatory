@@ -100,6 +100,7 @@ export async function POST(request: Request) {
       error_message: "Recovered stale processing import.",
       processed_at: new Date().toISOString(),
     })
+    .eq("machine_id", machineId)
     .eq("status", "processing")
     .lt("created_at", staleBefore);
 
@@ -113,6 +114,7 @@ export async function POST(request: Request) {
   const { data: existing, error: existingError } = await supabase
     .from("imports")
     .select("id,machine_id,scope_end")
+    .eq("machine_id", machineId)
     .eq("raw_sha256", rawSha)
     .in("status", ["processing", "processed"])
     .order("created_at", { ascending: false })
@@ -125,7 +127,6 @@ export async function POST(request: Request) {
 
   if (existing) {
     const duplicateId = randomUUID();
-    const crossMachineMatch = existing.machine_id !== machineId;
     const { error: duplicateAuditError } = await supabase.from("imports").insert({
       id: duplicateId,
       machine_id: machineId,
@@ -137,7 +138,6 @@ export async function POST(request: Request) {
       timezone: TELEMETRY_TIMEZONE,
       status: "exact_duplicate",
       duplicate_of_import_id: existing.id,
-      cross_machine_match: crossMachineMatch,
       processed_at: new Date().toISOString(),
     });
 
@@ -152,12 +152,10 @@ export async function POST(request: Request) {
       status: "exact_duplicate",
       importId: duplicateId,
       duplicateOfImportId: existing.id,
-      duplicateOfMachineId: existing.machine_id,
-      crossMachineMatch,
-      nextCommand:
-        crossMachineMatch || !existing.scope_end
-          ? undefined
-          : buildCcusageCommand(nextSinceFromDate(existing.scope_end)),
+      crossMachineMatch: Boolean(sameHashElsewhere),
+      nextCommand: existing.scope_end
+        ? buildCcusageCommand(nextSinceFromDate(existing.scope_end))
+        : undefined,
     });
   }
 
@@ -182,6 +180,19 @@ export async function POST(request: Request) {
       },
       { status: 422 },
     );
+  }
+
+  const { data: sameHashElsewhere, error: crossMachineError } = await supabase
+    .from("imports")
+    .select("id,machine_id")
+    .eq("raw_sha256", rawSha)
+    .eq("status", "processed")
+    .neq("machine_id", machineId)
+    .limit(1)
+    .maybeSingle();
+
+  if (crossMachineError) {
+    return NextResponse.json({ error: crossMachineError.message }, { status: 500 });
   }
 
   const { data: inFlight, error: inFlightError } = await supabase
@@ -224,13 +235,14 @@ export async function POST(request: Request) {
     scope_start: parsed.scopeStart,
     scope_end: parsed.scopeEnd,
     status: "processing",
-    cross_machine_match: false,
+    cross_machine_match: Boolean(sameHashElsewhere),
   });
 
   if (importError) {
     const { data: racedHash } = await supabase
       .from("imports")
       .select("id,machine_id")
+      .eq("machine_id", machineId)
       .eq("raw_sha256", rawSha)
       .in("status", ["processing", "processed"])
       .limit(1)
@@ -332,7 +344,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     status: "processed",
     importId,
-    crossMachineMatch: false,
+    crossMachineMatch: Boolean(sameHashElsewhere),
+    duplicateOfMachineId: sameHashElsewhere?.machine_id,
     summary,
     nextCommand: buildCcusageCommand(nextSinceFromDate(parsed.scopeEnd)),
   });

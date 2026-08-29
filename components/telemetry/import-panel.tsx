@@ -234,7 +234,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
                 <p className="font-semibold">
                   {result.status === "exact_duplicate"
                     ? result.crossMachineMatch
-                      ? "Cross-machine duplicate skipped"
+                      ? "Cross-machine match detected"
                       : "Exact duplicate skipped"
                     : "Import processed"}
                 </p>
@@ -295,9 +295,10 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
             {result.crossMachineMatch ? (
               <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-xs leading-5 text-amber-100/80">
-                These exact bytes were already accepted for{" "}
-                <b>{result.duplicateOfMachineId ?? "another machine"}</b>. They
-                were not promoted again, so global totals stay deduplicated.
+                These exact bytes were also seen for{" "}
+                <b>{result.duplicateOfMachineId ?? "another machine"}</b>. The
+                Observatory keeps this as provenance evidence but still treats
+                registered machines as distinct usage sources.
               </p>
             ) : null}
           </div>

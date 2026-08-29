@@ -40,8 +40,8 @@ create table if not exists public.imports (
   )
 );
 
-create unique index if not exists imports_one_active_hash_global
-  on public.imports(raw_sha256)
+create unique index if not exists imports_one_active_hash_per_machine
+  on public.imports(machine_id, raw_sha256)
   where status in ('processing', 'processed');
 
 create unique index if not exists imports_one_processing_per_machine
