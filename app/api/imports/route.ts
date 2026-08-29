@@ -115,9 +115,13 @@ export async function POST(request: Request) {
     );
   }
 
-  if (commandUsed && commandUsed.length > MAX_COMMAND_USED_CHARS) {
+  if (
+    commandUsed &&
+    (commandUsed.length > MAX_COMMAND_USED_CHARS ||
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(commandUsed))
+  ) {
     return NextResponse.json(
-      { error: "Collection command metadata is too long." },
+      { error: "Collection command metadata is invalid or too long." },
       { status: 400 },
     );
   }
