@@ -28,6 +28,7 @@ type ImportResponse = {
   summary?: {
     new: number;
     revised: number;
+    removed: number;
     unchanged: number;
     beforeTotal: number;
     afterTotal: number;
@@ -246,10 +247,11 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
             {result.summary ? (
               <>
-                <div className="mt-5 grid grid-cols-3 gap-2">
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {[
                     ["New", result.summary.new],
                     ["Revised", result.summary.revised],
+                    ["Removed", result.summary.removed],
                     ["Unchanged", result.summary.unchanged],
                   ].map(([label, value]) => (
                     <div

@@ -94,10 +94,21 @@ export function DashboardView({
           acc.output += row.output_tokens;
           acc.cache += row.cache_read_tokens;
           acc.delta += row.accounting_delta_tokens;
-          acc.cost += row.reported_cost_usd ?? 0;
+          if (row.reported_cost_usd !== null) {
+            acc.cost += row.reported_cost_usd;
+            acc.costRows += 1;
+          }
           return acc;
         },
-        { total: 0, input: 0, output: 0, cache: 0, delta: 0, cost: 0 },
+        {
+          total: 0,
+          input: 0,
+          output: 0,
+          cache: 0,
+          delta: 0,
+          cost: 0,
+          costRows: 0,
+        },
       ),
     [filtered],
   );
@@ -168,11 +179,16 @@ export function DashboardView({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1">
+          <div
+            role="group"
+            aria-label="Aggregation granularity"
+            className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1"
+          >
             {(["day", "week", "month"] as const).map((value) => (
               <button
                 key={value}
                 type="button"
+                aria-pressed={granularity === value}
                 onClick={() => setGranularity(value)}
                 className={[
                   "rounded-lg px-3 py-1.5 text-xs capitalize transition",
@@ -186,6 +202,7 @@ export function DashboardView({
             ))}
           </div>
           <select
+            aria-label="Filter by machine"
             value={machine}
             onChange={(event) => setMachine(event.target.value)}
             className="h-10 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
@@ -198,6 +215,7 @@ export function DashboardView({
             ))}
           </select>
           <select
+            aria-label="Filter by agent"
             value={agent}
             onChange={(event) => setAgent(event.target.value)}
             className="h-10 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
@@ -256,8 +274,16 @@ export function DashboardView({
             />
             <Metric
               label="ccusage cost"
-              value={money(totals.cost)}
-              detail="informational estimate"
+              value={totals.costRows ? money(totals.cost) : "—"}
+              detail={
+                totals.costRows
+                  ? "reported estimate · " +
+                    totals.costRows +
+                    "/" +
+                    filtered.length +
+                    " rows priced"
+                  : "no cost data reported"
+              }
               icon={Database}
             />
           </section>
@@ -290,6 +316,13 @@ export function DashboardView({
                     <div
                       key={day.date}
                       className="group flex h-full min-w-[16px] flex-1 flex-col justify-end"
+                      role="img"
+                      aria-label={
+                        day.date +
+                        ": " +
+                        day.total.toLocaleString() +
+                        " reported tokens"
+                      }
                       title={day.date + ": " + day.total.toLocaleString() + " tokens"}
                     >
                       <div className="mb-2 hidden text-center text-[9px] text-slate-500 group-hover:block">

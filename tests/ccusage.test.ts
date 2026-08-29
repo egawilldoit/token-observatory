@@ -23,6 +23,7 @@ function fixture(total = 300) {
             cacheReadTokens: 50,
             cacheCreationTokens: 0,
             totalTokens: 100,
+            costUSD: 0,
           },
           {
             agent: "opencode",
@@ -31,6 +32,7 @@ function fixture(total = 300) {
             cacheReadTokens: 130,
             cacheCreationTokens: 0,
             totalTokens: 200,
+            costUSD: 0,
           },
         ],
       },
@@ -94,11 +96,12 @@ test("builds a three-calendar-day overlap command", () => {
 
 
 test("tombstones an agent removed from a covered day", () => {
-  const current = parseCcusageDaily(fixture()).rows.map((row) => ({
+  const parsed = parseCcusageDaily(fixture());
+  const current = parsed.rows.map((row) => ({
     ...row,
     machine_id: "openclaw",
   }));
-  const incoming = [current[0]].map(({ machine_id: _machineId, ...row }) => row);
+  const incoming = [parsed.rows[0]];
 
   const result = diffDailyUsage(incoming, current);
 
@@ -116,7 +119,7 @@ test("cost-only changes create a new observation version", () => {
     machine_id: "openclaw",
   }));
   const changed = structuredClone(fixture());
-  changed.daily[0].agents[0].cost = 1.25;
+  changed.daily[0].agents[0].costUSD = 1.25;
   const incoming = parseCcusageDaily(changed).rows;
 
   const result = diffDailyUsage(incoming, current);
