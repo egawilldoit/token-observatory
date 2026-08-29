@@ -2,7 +2,10 @@ import "server-only";
 
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 import { buildCcusageCommand, nextSinceFromDate } from "./config";
-import type { CurrentDailyUsageRow } from "@/lib/ccusage/types";
+import type {
+  CurrentDailyModelUsageRow,
+  CurrentDailyUsageRow,
+} from "@/lib/ccusage/types";
 
 export type MachineRow = {
   id: string;
@@ -61,6 +64,20 @@ export async function getCurrentDailyUsage(): Promise<CurrentDailyUsageRow[]> {
 
   if (error) throw error;
   return (data ?? []) as CurrentDailyUsageRow[];
+}
+
+export async function getCurrentDailyModelUsage(): Promise<
+  CurrentDailyModelUsageRow[]
+> {
+  if (!isTelemetryConfigured()) return [];
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("v_current_daily_model_usage")
+    .select("*")
+    .order("usage_date", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as CurrentDailyModelUsageRow[];
 }
 
 export async function getRecentImports(limit = 20): Promise<ImportRow[]> {
