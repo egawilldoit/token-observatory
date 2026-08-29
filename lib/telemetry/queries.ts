@@ -32,6 +32,12 @@ type MachineCollectionStateRow = {
   last_scope_end: string | null;
 };
 
+export type MachineCollectionHint = MachineRow & {
+  lastAcceptedScopeEnd: string | null;
+  nextSince: string | null;
+  command: string;
+};
+
 export async function getMachines(): Promise<MachineRow[]> {
   if (!isTelemetryConfigured()) return [];
   const supabase = createAdminClient();
@@ -84,7 +90,7 @@ async function getMachineCollectionState(): Promise<MachineCollectionStateRow[]>
   return (data ?? []) as MachineCollectionStateRow[];
 }
 
-export async function getMachineCollectionHints() {
+export async function getMachineCollectionHints(): Promise<MachineCollectionHint[]> {
   const [machines, stateRows] = await Promise.all([
     getMachines(),
     getMachineCollectionState(),
