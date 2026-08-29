@@ -195,9 +195,7 @@ test("tombstones a whole missing day inside an overlapping snapshot", () => {
     machine_id: "openclaw",
   }));
 
-  const incoming = [current[0], current[2]].map(
-    ({ machine_id: _machineId, ...row }) => row,
-  );
+  const incoming: DailyUsageObservationInput[] = [current[0], current[2]];
 
   const result = diffDailyUsage(incoming, current);
 
