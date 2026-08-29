@@ -47,6 +47,13 @@ function fixture(total = 300) {
         ],
       },
     ],
+    totals: {
+      inputTokens: 90,
+      outputTokens: 30,
+      cacheReadTokens: 180,
+      cacheCreationTokens: 0,
+      totalTokens: total,
+    },
   };
 }
 
@@ -221,5 +228,16 @@ test("migration exposes accepted scope state independent of current usage rows",
   assert.match(
     migration,
     /grant select on table public\.v_machine_collection_state to service_role/,
+  );
+});
+
+
+test("rejects daily rows that disagree with top-level totals", () => {
+  const payload = fixture();
+  payload.totals.outputTokens = 31;
+
+  assert.throws(
+    () => parseCcusageDaily(payload),
+    /Daily rows do not reconcile with top-level outputTokens/,
   );
 });
