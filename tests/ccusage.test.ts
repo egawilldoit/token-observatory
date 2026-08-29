@@ -212,9 +212,12 @@ test("uses the Africa/Casablanca calendar boundary for future-date rejection", (
   assert.equal(isFutureTelemetryDate("2026-08-31", now), true);
 });
 
-test("migration exposes accepted scope state independent of current usage rows", async () => {
+test("forward migration exposes accepted scope state independent of current usage rows", async () => {
   const migration = await readFile(
-    new URL("../supabase/migrations/20260829_001_ccusage_v1.sql", import.meta.url),
+    new URL(
+      "../supabase/migrations/20260829_002_collection_state.sql",
+      import.meta.url,
+    ),
     "utf8",
   );
 
