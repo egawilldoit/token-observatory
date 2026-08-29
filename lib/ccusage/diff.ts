@@ -42,7 +42,9 @@ export function diffDailyUsage(
     current.map((row) => [keyOf(row), row] as const),
   );
   const incomingKeys = new Set(incoming.map(keyOf));
-  const incomingDates = new Set(incoming.map((row) => row.usage_date));
+  const incomingDates = incoming.map((row) => row.usage_date).sort();
+  const scopeStart = incomingDates[0] ?? null;
+  const scopeEnd = incomingDates[incomingDates.length - 1] ?? null;
 
   const newRows: DailyUsageObservationInput[] = [];
   const revisedRows: DailyUsageObservationInput[] = [];
@@ -69,7 +71,13 @@ export function diffDailyUsage(
 
   for (const existing of currentByKey.values()) {
     const key = keyOf(existing);
-    if (incomingDates.has(existing.usage_date) && !incomingKeys.has(key)) {
+    const coveredBySnapshot =
+      scopeStart !== null &&
+      scopeEnd !== null &&
+      existing.usage_date >= scopeStart &&
+      existing.usage_date <= scopeEnd;
+
+    if (coveredBySnapshot && !incomingKeys.has(key)) {
       removedRows.push(tombstoneFor(existing));
       projected.delete(key);
     }
