@@ -675,13 +675,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (crossMachineMatch !== Boolean(sameHashElsewhere)) {
-    await supabase
-      .from("imports")
-      .update({ cross_machine_match: crossMachineMatch })
-      .eq("id", importId);
-  }
-
   return NextResponse.json({
     status: "processed",
     importId,
