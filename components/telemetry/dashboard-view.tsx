@@ -166,23 +166,23 @@ function Metric({
   progress?: number;
 }) {
   const accentClass = {
-    cyan: "text-cyan-300 bg-cyan-300/10 border-cyan-300/15",
-    violet: "text-violet-300 bg-violet-300/10 border-violet-300/15",
-    emerald: "text-emerald-300 bg-emerald-300/10 border-emerald-300/15",
-    blue: "text-blue-300 bg-blue-300/10 border-blue-300/15",
+    cyan: "text-blue-600 bg-blue-50 border-blue-100",
+    violet: "text-violet-600 bg-violet-50 border-violet-100",
+    emerald: "text-emerald-600 bg-emerald-50 border-emerald-100",
+    blue: "text-sky-600 bg-sky-50 border-sky-100",
   }[accent];
 
   const progressClass = {
-    cyan: "bg-cyan-300",
-    violet: "bg-violet-300",
-    emerald: "bg-emerald-300",
-    blue: "bg-blue-300",
+    cyan: "bg-blue-500",
+    violet: "bg-violet-500",
+    emerald: "bg-emerald-500",
+    blue: "bg-sky-500",
   }[accent];
 
   return (
-    <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+    <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-9500">
           {label}
         </p>
         <span
@@ -194,14 +194,14 @@ function Metric({
           <Icon className="h-4 w-4" />
         </span>
       </div>
-      <p className="mt-3 text-[1.7rem] font-semibold leading-none tracking-[-0.045em] text-slate-50">
+      <p className="mt-3 text-[1.7rem] font-semibold leading-none tracking-[-0.045em] text-slate-950">
         {value}
       </p>
-      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-500">
+      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-9500">
         {detail}
       </p>
       {progress !== undefined ? (
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="mt-3 h-1 overflow-hidden rounded-full bg-slate-100">
           <div
             className={"h-full rounded-full " + progressClass}
             style={{ width: Math.max(0, Math.min(100, progress)) + "%" }}
@@ -213,11 +213,11 @@ function Metric({
 }
 
 const agentBarClasses = [
-  "bg-violet-400",
-  "bg-purple-400",
-  "bg-cyan-400",
-  "bg-sky-400",
-  "bg-emerald-400",
+  "bg-violet-500",
+  "bg-purple-500",
+  "bg-cyan-500",
+  "bg-sky-500",
+  "bg-emerald-500",
 ];
 
 export function DashboardView({
@@ -532,22 +532,22 @@ export function DashboardView({
     <div className="min-w-0 pb-8">
       <header className="flex min-w-0 flex-col justify-between gap-5 xl:flex-row xl:items-end">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
             Global telemetry
           </p>
-          <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-slate-50 md:text-4xl">
+          <h1 className="mt-2 max-w-3xl text-3xl font-semibold tracking-[-0.045em] text-slate-950 md:text-4xl">
             Token burn, without snapshot inflation.
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
             Canonical daily truth with agent, model, cost and source detail.
           </p>
         </div>
 
         <div className="flex min-w-0 flex-col items-stretch gap-3 xl:items-end">
-          <div className="flex items-center gap-2 self-start rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-xs text-slate-400 xl:self-end">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <div className="flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 xl:self-end">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             <span className="whitespace-nowrap">Data up to</span>
-            <strong className="whitespace-nowrap font-medium text-slate-200">
+            <strong className="whitespace-nowrap font-medium text-slate-800">
               {formatTimestamp(
                 latestProcessed?.processed_at ?? latestProcessed?.created_at,
               )}
@@ -558,7 +558,7 @@ export function DashboardView({
             <div
               role="group"
               aria-label="Time range"
-              className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1"
+              className="flex rounded-xl border border-slate-200 bg-white p-1"
             >
               {(
                 [
@@ -576,8 +576,8 @@ export function DashboardView({
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs transition",
                     range === value
-                      ? "bg-white/[0.09] text-white"
-                      : "text-slate-500 hover:text-slate-300",
+                      ? "bg-blue-50 text-white"
+                      : "text-slate-9500 hover:text-slate-700",
                   ].join(" ")}
                 >
                   {label}
@@ -587,7 +587,7 @@ export function DashboardView({
             <div
               role="group"
               aria-label="Aggregation granularity"
-              className="flex rounded-xl border border-white/10 bg-[#0b1722] p-1"
+              className="flex rounded-xl border border-slate-200 bg-white p-1"
             >
               {(["day", "week", "month"] as const).map((value) => (
                 <button
@@ -598,8 +598,8 @@ export function DashboardView({
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs capitalize transition",
                     granularity === value
-                      ? "bg-white/[0.09] text-white"
-                      : "text-slate-500 hover:text-slate-300",
+                      ? "bg-blue-50 text-white"
+                      : "text-slate-9500 hover:text-slate-700",
                   ].join(" ")}
                 >
                   {value}
@@ -613,7 +613,7 @@ export function DashboardView({
                 setMachine(event.target.value);
                 setModel("all");
               }}
-              className="h-10 min-w-0 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
+              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100"
             >
               <option value="all">All machines</option>
               {machines.map((item) => (
@@ -629,7 +629,7 @@ export function DashboardView({
                 setAgent(event.target.value);
                 setModel("all");
               }}
-              className="h-10 min-w-0 rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1"
+              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100"
             >
               <option value="all">All agents</option>
               {agents.map((item) => (
@@ -643,7 +643,7 @@ export function DashboardView({
               value={model}
               onChange={(event) => setModel(event.target.value)}
               disabled={models.length === 0}
-              className="h-10 min-w-0 max-w-[260px] rounded-xl border border-white/10 bg-[#0b1722] px-3 text-sm text-slate-300 outline-none ring-cyan-400 focus:ring-1 disabled:opacity-40"
+              className="h-10 min-w-0 max-w-[260px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100 disabled:opacity-40"
             >
               <option value="all">All models</option>
               {models.map((item) => (
@@ -658,9 +658,9 @@ export function DashboardView({
 
       {rows.length === 0 ? (
         <div className="mt-8 rounded-3xl border border-dashed border-white/15 bg-white/[0.025] px-6 py-16 text-center">
-          <Database className="mx-auto h-8 w-8 text-slate-600" />
+          <Database className="mx-auto h-8 w-8 text-slate-500" />
           <h2 className="mt-4 text-xl font-semibold">No accepted usage yet</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-9500">
             Register a machine, then import your first pinned ccusage daily JSON.
           </p>
         </div>
@@ -729,23 +729,23 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-w-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035] p-5 md:p-6">
+            <div className="min-w-0 overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold text-slate-100">
+                  <h2 className="font-semibold text-slate-900">
                     {granularity === "day"
                       ? "Daily token burn"
                       : granularity === "week"
                         ? "Weekly token burn"
                         : "Monthly token burn"}
                   </h2>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-slate-9500">
                     {model === "all"
                       ? "Canonical tokens grouped from latest accepted rows"
                       : "Model-attributed canonical tokens for " + model}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
+                <span className="shrink-0 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-9500">
                   {byPeriod.length}{" "}
                   {granularity === "day"
                     ? "days"
@@ -760,7 +760,7 @@ export function DashboardView({
                   {yTicks.map((tick) => (
                     <span
                       key={tick.ratio}
-                      className="absolute right-0 -translate-y-1/2 text-[9px] tabular-nums text-slate-600"
+                      className="absolute right-0 -translate-y-1/2 text-[9px] tabular-nums text-slate-500"
                       style={{ top: (1 - tick.ratio) * 100 + "%" }}
                     >
                       {tick.ratio === 0 ? "0" : compact(tick.value)}
@@ -773,7 +773,7 @@ export function DashboardView({
                     <div
                       key={tick.ratio}
                       aria-hidden="true"
-                      className="absolute inset-x-0 border-t border-dashed border-white/[0.06]"
+                      className="absolute inset-x-0 border-t border-dashed border-slate-200"
                       style={{ top: (1 - tick.ratio) * 100 + "%" }}
                     />
                   ))}
@@ -808,7 +808,7 @@ export function DashboardView({
                           }
                         >
                           <div
-                            className="w-full rounded-t-[3px] bg-cyan-300/75 transition group-hover:bg-cyan-200"
+                            className="w-full rounded-t-[3px] bg-blue-500/80 transition group-hover:bg-blue-600"
                             style={{ height: height + "%" }}
                           />
                         </div>
@@ -828,7 +828,7 @@ export function DashboardView({
                   {byPeriod.map((period, index) => (
                     <span
                       key={period.date}
-                      className="min-w-0 text-center text-[9px] text-slate-600"
+                      className="min-w-0 text-center text-[9px] text-slate-500"
                     >
                       {index % labelEvery === 0 || index === byPeriod.length - 1
                         ? formatPeriodLabel(period.date, granularity)
@@ -839,9 +839,9 @@ export function DashboardView({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5 md:p-6">
-              <h2 className="font-semibold text-slate-100">Agent share</h2>
-              <p className="mt-1 text-xs text-slate-500">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
+              <h2 className="font-semibold text-slate-900">Agent share</h2>
+              <p className="mt-1 text-xs text-slate-9500">
                 True share of the selected token total
               </p>
 
@@ -851,17 +851,17 @@ export function DashboardView({
                   return (
                     <div key={name}>
                       <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                        <span className="truncate capitalize text-slate-300">
+                        <span className="truncate capitalize text-slate-700">
                           {name}
                         </span>
                         <div className="flex shrink-0 items-center gap-2 text-xs tabular-nums">
-                          <span className="text-slate-400">{compact(value)}</span>
-                          <span className="w-12 text-right text-slate-600">
+                          <span className="text-slate-500">{compact(value)}</span>
+                          <span className="w-12 text-right text-slate-500">
                             {share.toFixed(1)}%
                           </span>
                         </div>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                         <div
                           className={
                             "h-full rounded-full " +
@@ -881,27 +881,27 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.55fr)_340px]">
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold text-slate-100">Model usage</h2>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <h2 className="font-semibold text-slate-900">Model usage</h2>
+                  <p className="mt-1 text-xs text-slate-9500">
                     Per-model attribution from ccusage modelBreakdowns
                   </p>
                 </div>
                 {modelRows.length ? (
-                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
+                  <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-9500">
                     {models.length} models · {modelCoverage.toFixed(1)}% covered
                   </span>
                 ) : null}
               </div>
 
               {modelRows.length === 0 ? (
-                <div className="mt-5 rounded-2xl border border-dashed border-cyan-300/20 bg-cyan-300/[0.035] p-5">
-                  <p className="text-sm font-medium text-slate-200">
+                <div className="mt-5 rounded-2xl border border-dashed border-blue-200 bg-blue-50/70 p-5">
+                  <p className="text-sm font-medium text-slate-800">
                     Model detail is still in the preserved raw snapshot.
                   </p>
-                  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-500">
+                  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-9500">
                     Load it from the private raw import. This enriches model
                     analytics only; the certified canonical token total is not
                     re-added or changed.
@@ -910,7 +910,7 @@ export function DashboardView({
                     type="button"
                     onClick={backfillModels}
                     disabled={backfillBusy}
-                    className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-cyan-300 px-3 text-xs font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-50"
+                    className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
                   >
                     {backfillBusy ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -920,7 +920,7 @@ export function DashboardView({
                     Load model details
                   </button>
                   {backfillMessage ? (
-                    <p className="mt-3 text-xs text-slate-400">
+                    <p className="mt-3 text-xs text-slate-500">
                       {backfillMessage}
                     </p>
                   ) : null}
@@ -928,7 +928,7 @@ export function DashboardView({
               ) : (
                 <div className="mt-5 overflow-x-auto">
                   <table className="w-full min-w-[760px] text-left text-xs">
-                    <thead className="text-[10px] uppercase tracking-[0.12em] text-slate-600">
+                    <thead className="text-[10px] uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="pb-3 font-medium">Model</th>
                         <th className="pb-3 font-medium">Agent</th>
@@ -952,29 +952,29 @@ export function DashboardView({
                               <button
                                 type="button"
                                 onClick={() => setModel(item.model)}
-                                className="block max-w-full truncate font-mono text-[11px] font-medium text-slate-200 transition hover:text-cyan-300"
+                                className="block max-w-full truncate font-mono text-[11px] font-medium text-slate-800 transition hover:text-blue-600"
                                 title={item.model}
                               >
                                 {item.model}
                               </button>
-                              <span className="mt-1 block text-[10px] text-slate-600">
+                              <span className="mt-1 block text-[10px] text-slate-500">
                                 {item.days.size} active day
                                 {item.days.size === 1 ? "" : "s"}
                               </span>
                             </td>
-                            <td className="py-3 pr-4 capitalize text-slate-400">
+                            <td className="py-3 pr-4 capitalize text-slate-500">
                               {[...item.agents].join(", ")}
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-300">
+                            <td className="py-3 text-right tabular-nums text-slate-700">
                               {compact(item.total)}
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-500">
+                            <td className="py-3 text-right tabular-nums text-slate-9500">
                               {share.toFixed(1)}%
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-500">
+                            <td className="py-3 text-right tabular-nums text-slate-9500">
                               {cacheShareForModel.toFixed(1)}%
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-400">
+                            <td className="py-3 text-right tabular-nums text-slate-500">
                               {item.costRows ? money(item.cost) : "—"}
                             </td>
                           </tr>
@@ -986,9 +986,9 @@ export function DashboardView({
               )}
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
-              <h2 className="font-semibold text-slate-100">Usage detail</h2>
-              <p className="mt-1 text-xs text-slate-500">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
+              <h2 className="font-semibold text-slate-900">Usage detail</h2>
+              <p className="mt-1 text-xs text-slate-9500">
                 Selected scope at a glance
               </p>
 
@@ -1008,12 +1008,12 @@ export function DashboardView({
                 ].map(([label, value]) => (
                   <div
                     key={label}
-                    className="rounded-xl border border-white/[0.07] bg-black/15 p-3"
+                    className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
                   >
-                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-600">
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">
                       {label}
                     </p>
-                    <p className="mt-1.5 text-sm font-medium tabular-nums text-slate-300">
+                    <p className="mt-1.5 text-sm font-medium tabular-nums text-slate-700">
                       {value}
                     </p>
                   </div>
@@ -1023,12 +1023,12 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2 2xl:grid-cols-[.9fr_1.25fr_.9fr]">
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="mb-5">
-                <h2 className="font-semibold text-slate-100">
+                <h2 className="font-semibold text-slate-900">
                   Machine contribution
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-slate-9500">
                   Physical sources contributing to this view
                 </p>
               </div>
@@ -1039,24 +1039,24 @@ export function DashboardView({
                   return (
                     <div
                       key={id}
-                      className="rounded-2xl border border-white/[0.08] bg-black/15 p-4"
+                      className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-200">
+                          <p className="truncate text-sm font-medium text-slate-800">
                             {machineRow?.name ?? id}
                           </p>
-                          <p className="mt-1 text-[11px] text-slate-600">
+                          <p className="mt-1 text-[11px] text-slate-500">
                             {share.toFixed(1)}% of selected total
                           </p>
                         </div>
-                        <span className="shrink-0 text-sm tabular-nums text-slate-400">
+                        <span className="shrink-0 text-sm tabular-nums text-slate-500">
                           {compact(value)}
                         </span>
                       </div>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
                         <div
-                          className="h-full rounded-full bg-emerald-400/80"
+                          className="h-full rounded-full bg-emerald-500/80"
                           style={{ width: share + "%" }}
                         />
                       </div>
@@ -1066,17 +1066,17 @@ export function DashboardView({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="font-semibold text-slate-100">Recent imports</h2>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <h2 className="font-semibold text-slate-900">Recent imports</h2>
+                  <p className="mt-1 text-xs text-slate-9500">
                     Latest snapshot outcomes
                   </p>
                 </div>
                 <a
                   href="/imports"
-                  className="text-xs font-medium text-cyan-300 transition hover:text-cyan-200"
+                  className="text-xs font-medium text-blue-600 transition hover:text-blue-600"
                 >
                   View all
                 </a>
@@ -1097,11 +1097,11 @@ export function DashboardView({
                         <div className="min-w-0">
                           <div className="flex min-w-0 items-center gap-2">
                             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-                            <p className="truncate text-sm font-medium text-slate-300">
+                            <p className="truncate text-sm font-medium text-slate-700">
                               {machineRow?.name ?? item.machine_id}
                             </p>
                           </div>
-                          <p className="mt-1 truncate pl-6 text-[11px] text-slate-600">
+                          <p className="mt-1 truncate pl-6 text-[11px] text-slate-500">
                             {item.scope_start && item.scope_end
                               ? item.scope_start + " → " + item.scope_end
                               : "Scope unavailable"}
@@ -1110,10 +1110,10 @@ export function DashboardView({
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className="rounded-full border border-emerald-400/15 bg-emerald-400/[0.07] px-2 py-1 text-[10px] text-emerald-300">
+                          <span className="rounded-full border border-emerald-400/15 bg-emerald-500/[0.07] px-2 py-1 text-[10px] text-emerald-600">
                             {item.status}
                           </span>
-                          <p className="mt-2 text-xs tabular-nums text-slate-500">
+                          <p className="mt-2 text-xs tabular-nums text-slate-9500">
                             {netChange === null
                               ? "—"
                               : (netChange >= 0 ? "+" : "") + compact(netChange)}
@@ -1123,23 +1123,23 @@ export function DashboardView({
                     );
                   })
                 ) : (
-                  <p className="py-6 text-sm text-slate-500">
+                  <p className="py-6 text-sm text-slate-9500">
                     No imports match this machine filter.
                   </p>
                 )}
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5 xl:col-span-2 2xl:col-span-1">
+            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 xl:col-span-2 2xl:col-span-1">
               <div className="flex items-start gap-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-violet-300/15 bg-violet-300/10 text-violet-300">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-violet-300/15 bg-violet-300/10 text-violet-600">
                   <Clock3 className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
-                  <h2 className="font-semibold text-slate-100">
+                  <h2 className="font-semibold text-slate-900">
                     Recommended collection
                   </h2>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-slate-9500">
                     {activeCollection
                       ? "Three-day reconciliation overlap"
                       : "No machine available"}
@@ -1149,17 +1149,17 @@ export function DashboardView({
 
               {activeCollection ? (
                 <>
-                  <div className="mt-4 rounded-xl border border-white/[0.08] bg-black/20 p-3">
-                    <code className="block break-all text-[11px] leading-5 text-slate-300">
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                    <code className="block break-all text-[11px] leading-5 text-slate-700">
                       {activeCollection.command}
                     </code>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0 text-[11px] leading-5 text-slate-600">
+                    <div className="min-w-0 text-[11px] leading-5 text-slate-500">
                       <p className="truncate">{activeCollection.name}</p>
                       <p>
                         Next since:{" "}
-                        <span className="text-emerald-300">
+                        <span className="text-emerald-600">
                           {activeCollection.nextSince ?? "full history"}
                         </span>
                       </p>
@@ -1167,7 +1167,7 @@ export function DashboardView({
                     <button
                       type="button"
                       onClick={copyCommand}
-                      className="flex shrink-0 items-center gap-2 rounded-lg border border-white/10 px-2.5 py-2 text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200"
+                      className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-600 transition hover:bg-slate-50 hover:text-slate-800"
                     >
                       <Copy className="h-3.5 w-3.5" />
                       {copied ? "Copied" : "Copy"}
@@ -1179,7 +1179,7 @@ export function DashboardView({
           </section>
 
           {totals.delta !== 0 ? (
-            <p className="mt-4 text-xs text-slate-600">
+            <p className="mt-4 text-xs text-slate-500">
               Accounting delta preserved from ccusage: {compact(totals.delta)}.
               It is intentionally not assigned a semantic meaning.
             </p>
