@@ -44,7 +44,7 @@ export function UpdatePasswordForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card>
+      <Card className="rounded-2xl border-slate-200 bg-white text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.025),0_18px_50px_rgba(15,23,42,0.05)]">
         <CardHeader>
           <CardTitle className="text-2xl">Reset Your Password</CardTitle>
           <CardDescription>
@@ -57,6 +57,7 @@ export function UpdatePasswordForm({
               <div className="grid gap-2">
                 <Label htmlFor="password">New password</Label>
                 <Input
+                  className="h-11 rounded-xl border-slate-200 bg-white focus-visible:ring-2 focus-visible:ring-blue-100"
                   id="password"
                   type="password"
                   placeholder="New password"
@@ -65,8 +66,8 @@ export function UpdatePasswordForm({
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </div>
-              {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : null}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+              <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700" disabled={isLoading}>
                 {isLoading ? "Saving..." : "Save new password"}
               </Button>
             </div>
