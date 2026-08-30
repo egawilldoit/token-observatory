@@ -554,3 +554,35 @@ test("cross-machine migration preserves per-machine truth and adds dedupe-aware 
     /reason in \(\s*'exact_raw_snapshot',\s*'exact_daily_with_session_evidence'/,
   );
 });
+
+
+test("mirrored sessions with divergent daily counters are warning-only", () => {
+  const parsed = parseCcusageDaily(sessionFixture());
+  const incomingDaily = parsed.rows.find((row) => row.agent === "codex")!;
+  const divergentDaily: CurrentDailyUsageRow = {
+    ...incomingDaily,
+    id: "00000000-0000-0000-0000-000000000031",
+    machine_id: "machine-a",
+    input_tokens: incomingDaily.input_tokens + 1,
+    reported_total_tokens: incomingDaily.reported_total_tokens + 1,
+    global_duplicate: false,
+  };
+  const existingSessions: StoredSessionEvidenceRow[] =
+    parsed.sessionRows.map((row, index) => ({
+      ...row,
+      id: "00000000-0000-0000-0000-00000000003" + (index + 2),
+      import_id: "00000000-0000-0000-0000-000000000039",
+      machine_id: "machine-a",
+    }));
+
+  const analysis = analyzeCrossMachineDuplicates({
+    incomingDaily: [incomingDaily],
+    incomingSessions: parsed.sessionRows,
+    existingDaily: [divergentDaily],
+    existingSessions,
+  });
+
+  assert.equal(analysis.links.length, 0);
+  assert.equal(analysis.partialMirrorRisk, true);
+  assert.equal(analysis.duplicateTokensPrevented, 0);
+});
