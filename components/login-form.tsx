@@ -60,10 +60,10 @@ export function LoginForm({
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
-      <Card className="border-white/10 bg-white/[0.04] text-slate-100">
+      <Card className="rounded-2xl border-slate-200 bg-white text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.025),0_18px_50px_rgba(15,23,42,0.05)]">
         <CardHeader>
           <CardTitle className="text-2xl">Token Observatory</CardTitle>
-          <CardDescription className="text-slate-400">
+          <CardDescription className="text-slate-500">
             Sign in with an authorized account.
           </CardDescription>
         </CardHeader>
@@ -73,6 +73,7 @@ export function LoginForm({
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
+                  className="h-11 rounded-xl border-slate-200 bg-white focus-visible:ring-2 focus-visible:ring-blue-100"
                   id="email"
                   type="email"
                   autoComplete="email"
@@ -87,12 +88,13 @@ export function LoginForm({
                   <Label htmlFor="password">Password</Label>
                   <Link
                     href="/auth/forgot-password"
-                    className="ml-auto inline-block text-sm text-slate-400 underline-offset-4 hover:underline"
+                    className="ml-auto inline-block text-xs font-medium text-blue-600 underline-offset-4 hover:underline"
                   >
                     Forgot password?
                   </Link>
                 </div>
                 <Input
+                  className="h-11 rounded-xl border-slate-200 bg-white focus-visible:ring-2 focus-visible:ring-blue-100"
                   id="password"
                   type="password"
                   autoComplete="current-password"
@@ -102,11 +104,11 @@ export function LoginForm({
                 />
               </div>
               {error ? (
-                <p role="alert" className="text-sm text-red-300">
+                <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
                 </p>
               ) : null}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="h-11 w-full rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700" disabled={isLoading}>
                 {isLoading ? "Signing in..." : "Sign in"}
               </Button>
             </div>
