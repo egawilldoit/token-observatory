@@ -495,7 +495,7 @@ export async function POST(request: Request) {
   }
 
   const { data: currentData, error: currentError } = await supabase
-    .from("v_current_daily_usage")
+    .from("v_current_daily_usage_dedupe")
     .select("*")
     .eq("machine_id", machineId);
 
@@ -592,16 +592,25 @@ export async function POST(request: Request) {
     rawDuplicateMachineId: sameHashElsewhere?.machine_id ?? null,
   });
 
+  const dedupeLinks = crossMachineAnalysis.links;
+  const currentLocalByKey = new Map(
+    ((currentData ?? []) as CurrentDailyUsageRow[]).map((row) => [
+      row.agent + "|" + row.usage_date,
+      row,
+    ]),
+  );
   const writtenDailyKeys = new Set(
     rowsToWrite
       .filter((row) => !row.is_tombstone)
       .map((row) => row.agent + "|" + row.usage_date),
   );
-  const dedupeLinks = crossMachineAnalysis.links.filter((link) =>
-    writtenDailyKeys.has(link.agent + "|" + link.usage_date),
-  );
   const duplicateTokensPrevented = dedupeLinks.reduce((total, link) => {
-    const row = rowsToWrite.find(
+    const key = link.agent + "|" + link.usage_date;
+    const currentLocal = currentLocalByKey.get(key);
+    if (!writtenDailyKeys.has(key) && currentLocal?.global_duplicate) {
+      return total;
+    }
+    const row = parsed.rows.find(
       (item) =>
         item.agent === link.agent &&
         item.usage_date === link.usage_date &&
