@@ -6,6 +6,8 @@ import {
   Copy,
   FileJson2,
   Loader2,
+  RefreshCw,
+  ShieldCheck,
   Terminal,
   UploadCloud,
 } from "lucide-react";
@@ -18,6 +20,9 @@ type MachineHint = {
   lastAcceptedScopeEnd: string | null;
   nextSince: string | null;
   command: string;
+  sessionEvidenceCount: number;
+  mirrorFingerprintCount: number;
+  lastSessionEvidenceAt: string | null;
 };
 
 type ImportResponse = {
@@ -28,6 +33,8 @@ type ImportResponse = {
   duplicateOfMachineId?: string;
   crossMachineMatch?: boolean;
   modelBackfilled?: number;
+  sessionBackfilled?: number;
+  sessionEvidenceCount?: number;
   models?: string[];
   summary?: {
     new: number;
@@ -41,6 +48,16 @@ type ImportResponse = {
     scopeStart: string;
     scopeEnd: string;
     warnings: string[];
+    sessionEvidence?: {
+      imported: number;
+      exactCrossMachineMatches: number;
+      identityCrossMachineMatches: number;
+      partialMirrorRisk: boolean;
+    };
+    globalDedupe?: {
+      rowsSuppressed: number;
+      duplicateTokensPrevented: number;
+    };
   };
   nextCommand?: string;
 };
@@ -83,6 +100,8 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [commandCopied, setCommandCopied] = useState(false);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [evidenceMessage, setEvidenceMessage] = useState<string | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +131,54 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
       window.setTimeout(() => setCommandCopied(false), 1600);
     } catch {
       setError("Could not copy the collection command.");
+    }
+  }
+
+  async function backfillSessionEvidence() {
+    if (!selected) return;
+
+    setEvidenceBusy(true);
+    setEvidenceMessage(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/sessions/backfill", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ machineId: selected.id }),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        insertedSessionRows?: number;
+        parsedSessionRows?: number;
+        warnings?: string[];
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Session evidence backfill failed.");
+      }
+
+      setEvidenceMessage(
+        "Loaded " +
+          Number(payload.insertedSessionRows ?? 0).toLocaleString() +
+          " new session fingerprints from " +
+          Number(payload.parsedSessionRows ?? 0).toLocaleString() +
+          " parsed session rows.",
+      );
+      router.refresh();
+    } catch (caught) {
+      setEvidenceMessage(
+        caught instanceof Error
+          ? caught.message
+          : "Session evidence backfill failed.",
+      );
+    } finally {
+      setEvidenceBusy(false);
     }
   }
 
@@ -347,6 +414,89 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
           ) : null}
         </div>
 
+        <div className="obs-card p-5 md:p-6">
+          <div className="flex items-start gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600">
+              <ShieldCheck className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-slate-950">
+                Dedupe protection
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Per-machine truth stays intact. Proven mirrors are removed only
+                from all-machines totals.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {[
+              ["Exact file", "Protected"],
+              ["Daily overlap", "Protected"],
+              ["Model overlap", "Protected"],
+              [
+                "Cross-machine sessions",
+                selected?.sessionEvidenceCount
+                  ? selected.sessionEvidenceCount.toLocaleString() + " fingerprints"
+                  : "Evidence not loaded",
+              ],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2.5"
+              >
+                <span className="text-xs text-slate-500">{label}</span>
+                <span
+                  className={
+                    "text-xs font-medium " +
+                    (value === "Evidence not loaded"
+                      ? "text-amber-700"
+                      : "text-emerald-700")
+                  }
+                >
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {!selected?.sessionEvidenceCount ? (
+            <button
+              type="button"
+              onClick={backfillSessionEvidence}
+              disabled={evidenceBusy}
+              className="mt-4 flex h-9 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+            >
+              {evidenceBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              Load stored session evidence
+            </button>
+          ) : (
+            <p className="mt-3 text-[11px] text-slate-400">
+              Session evidence last loaded{" "}
+              {selected.lastSessionEvidenceAt
+                ? new Intl.DateTimeFormat("en-GB", {
+                    month: "short",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(new Date(selected.lastSessionEvidenceAt))
+                : "from stored imports"}
+              .
+            </p>
+          )}
+
+          {evidenceMessage ? (
+            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+              {evidenceMessage}
+            </p>
+          ) : null}
+        </div>
+
         {result ? (
           <div
             role="status"
@@ -432,6 +582,46 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               </p>
             ) : null}
 
+            {result.summary?.globalDedupe ? (
+              <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-emerald-200 bg-white/80 p-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    Mirror rows suppressed
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-slate-950">
+                    {result.summary.globalDedupe.rowsSuppressed}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                    Duplicate tokens prevented
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-700">
+                    {compact(
+                      result.summary.globalDedupe.duplicateTokensPrevented,
+                    )}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {result.summary?.sessionEvidence?.partialMirrorRisk ? (
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                Partial cross-machine session overlap was detected, but the
+                daily usage was not identical enough to suppress automatically.
+                It remains counted and flagged for review.
+              </p>
+            ) : null}
+
+            {result.sessionBackfilled !== undefined ? (
+              <p className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
+                Session evidence:{" "}
+                <b>{result.sessionBackfilled.toLocaleString()}</b> new
+                fingerprint{result.sessionBackfilled === 1 ? "" : "s"} loaded
+                from this exact dataset.
+              </p>
+            ) : null}
+
             {result.nextCommand ? (
               <div className="mt-4 rounded-xl border border-slate-200 bg-white/80 p-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -445,10 +635,11 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
             {result.crossMachineMatch ? (
               <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-                These exact bytes were also seen for{" "}
-                <b>{result.duplicateOfMachineId ?? "another machine"}</b>. The
-                Observatory keeps this as provenance evidence but still treats
-                registered machines as distinct usage sources.
+                Cross-machine provenance overlaps with{" "}
+                <b>{result.duplicateOfMachineId ?? "another machine"}</b>.
+                Exact mirrored daily rows are excluded from global totals only
+                when the evidence threshold is met; machine-specific totals
+                remain unchanged.
               </p>
             ) : null}
           </div>
