@@ -27,38 +27,37 @@ const features = [
 
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#071019] text-slate-100">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_75%_0%,rgba(34,211,238,0.10),transparent_35%),radial-gradient(circle_at_15%_55%,rgba(139,92,246,0.07),transparent_30%)]" />
-      <div className="relative mx-auto max-w-6xl px-5 py-7 md:px-8">
+    <main className="min-h-screen bg-[#fbfcfe] text-slate-950">
+      <div className="mx-auto max-w-6xl px-5 py-7 md:px-8">
         <nav className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-300">
-              <Database className="h-5 w-5" />
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-200">
+              <Database className="h-[18px] w-[18px]" />
             </div>
             <div>
-              <p className="font-semibold">Token Observatory</p>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-slate-600">
+              <p className="font-semibold tracking-[-0.02em]">Token Observatory</p>
+              <p className="mt-0.5 text-[10px] text-slate-400">
                 ccusage telemetry
               </p>
             </div>
           </div>
           <Link
             href="/auth/login"
-            className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-300 transition hover:bg-white/[0.08]"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
           >
             Sign in
           </Link>
         </nav>
 
-        <section className="grid items-center gap-12 py-20 md:py-28 lg:grid-cols-[1.1fr_.9fr]">
+        <section className="grid items-center gap-12 py-20 md:py-28 lg:grid-cols-[1.06fr_.94fr]">
           <div>
-            <div className="inline-flex rounded-full border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-cyan-200">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-600">
               Multi-machine AI usage
-            </div>
-            <h1 className="mt-6 max-w-3xl text-5xl font-semibold leading-[1.02] tracking-[-0.055em] md:text-7xl">
+            </p>
+            <h1 className="mt-4 max-w-3xl text-5xl font-semibold leading-[1.02] tracking-[-0.055em] text-slate-950 md:text-7xl">
               One source of truth for every token you burn.
             </h1>
-            <p className="mt-6 max-w-xl text-base leading-7 text-slate-400">
+            <p className="mt-6 max-w-xl text-base leading-7 text-slate-500">
               Collect ccusage snapshots from your VM and PCs, deduplicate overlap
               safely, and inspect daily token consumption from one Supabase-backed
               dashboard.
@@ -66,31 +65,33 @@ export default function Home() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/dashboard"
-                className="flex items-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200"
+                className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
               >
                 Open observatory
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href="/imports"
-                className="rounded-xl border border-white/10 bg-white/[0.035] px-5 py-3 text-sm font-medium text-slate-300 transition hover:bg-white/[0.07]"
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-blue-200 hover:text-blue-700"
               >
                 Import usage
               </Link>
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.035] p-5 shadow-2xl shadow-black/20">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_20px_60px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.16em] text-slate-600">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Canonical pipeline
                 </p>
-                <p className="mt-1 text-sm font-medium">Absolute observations</p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  Absolute observations
+                </p>
               </div>
-              <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,.5)]" />
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
             </div>
-            <div className="mt-5 space-y-3">
+            <div className="mt-5 space-y-2.5">
               {[
                 ["01", "Upload", "Raw JSON → immutable Storage"],
                 ["02", "Fingerprint", "SHA-256 + daily usage hashes"],
@@ -100,10 +101,10 @@ export default function Home() {
               ].map(([step, label, detail]) => (
                 <div
                   key={step}
-                  className="grid grid-cols-[36px_90px_1fr] items-center gap-3 rounded-2xl border border-white/[0.07] bg-black/15 px-3 py-3"
+                  className="grid grid-cols-[36px_90px_1fr] items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-3"
                 >
-                  <span className="font-mono text-[10px] text-slate-600">{step}</span>
-                  <span className="text-sm font-medium text-slate-300">{label}</span>
+                  <span className="font-mono text-[10px] text-slate-400">{step}</span>
+                  <span className="text-sm font-medium text-slate-800">{label}</span>
                   <span className="text-xs text-slate-500">{detail}</span>
                 </div>
               ))}
@@ -111,13 +112,15 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="grid gap-3 border-t border-white/10 py-8 md:grid-cols-3">
+        <section className="grid gap-3 border-t border-slate-200 py-9 md:grid-cols-3">
           {features.map((feature) => {
             const Icon = feature.icon;
             return (
-              <div key={feature.title} className="p-4">
-                <Icon className="h-5 w-5 text-slate-500" />
-                <h2 className="mt-4 font-medium">{feature.title}</h2>
+              <div key={feature.title} className="rounded-2xl p-4">
+                <div className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-600">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <h2 className="mt-4 font-semibold text-slate-900">{feature.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
                   {feature.text}
                 </p>
