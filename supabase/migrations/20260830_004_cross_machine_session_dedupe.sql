@@ -353,6 +353,11 @@ begin
 
   get diagnostics v_dedupe_inserted = row_count;
 
+  update public.imports
+  set cross_machine_match =
+    coalesce((p_summary ->> 'crossMachineMatch')::boolean, false)
+  where id = p_import_id;
+
   return coalesce(v_result, '{}'::jsonb)
     || coalesce(v_session_result, '{}'::jsonb)
     || jsonb_build_object('dedupeLinks', v_dedupe_inserted);
