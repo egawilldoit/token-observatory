@@ -31,7 +31,7 @@ export function LogoutButton({
       onClick={logout}
       disabled={busy}
       aria-label={compact ? "Sign out" : undefined}
-      className="text-slate-400 hover:text-slate-100"
+      className="justify-start text-slate-500 hover:bg-slate-100 hover:text-slate-900"
     >
       <LogOut className="h-4 w-4" />
       {compact ? "Sign out" : busy ? "Signing out..." : "Sign out"}
