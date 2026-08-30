@@ -19,13 +19,13 @@ async function MachinesRuntime() {
   return (
     <>
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
           Sources
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-[2rem]">
           Machine registry
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
           Stable identities prevent accidental Work-PC / work pc / WorkPC
           fragmentation at import time.
         </p>

@@ -1,5 +1,7 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertCircle } from "lucide-react";
 import { Suspense } from "react";
+
+import { AuthShell } from "@/components/auth-shell";
 
 async function ErrorContent({
   searchParams,
@@ -9,17 +11,11 @@ async function ErrorContent({
   const params = await searchParams;
 
   return (
-    <>
-      {params?.error ? (
-        <p className="text-sm text-muted-foreground">
-          Code error: {params.error}
-        </p>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          An unspecified error occurred.
-        </p>
-      )}
-    </>
+    <p className="mt-3 text-sm leading-6 text-slate-500">
+      {params?.error
+        ? "Code error: " + params.error
+        : "An unspecified authentication error occurred."}
+    </p>
   );
 }
 
@@ -29,23 +25,18 @@ export default function Page({
   searchParams: Promise<{ error: string }>;
 }) {
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">
-                Sorry, something went wrong.
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Suspense>
-                <ErrorContent searchParams={searchParams} />
-              </Suspense>
-            </CardContent>
-          </Card>
+    <AuthShell>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-[0_1px_2px_rgba(15,23,42,0.025),0_18px_50px_rgba(15,23,42,0.05)]">
+        <div className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-red-50 text-red-600">
+          <AlertCircle className="h-5 w-5" />
         </div>
+        <h1 className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+          Sorry, something went wrong.
+        </h1>
+        <Suspense fallback={<p className="mt-3 text-sm text-slate-400">Loading error details…</p>}>
+          <ErrorContent searchParams={searchParams} />
+        </Suspense>
       </div>
-    </div>
+    </AuthShell>
   );
 }

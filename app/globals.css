@@ -4,31 +4,31 @@
 
 @layer base {
   :root {
-    --background: 204 56% 6%;
-    --foreground: 210 40% 96%;
-    --card: 205 43% 9%;
-    --card-foreground: 210 40% 96%;
-    --popover: 205 43% 9%;
-    --popover-foreground: 210 40% 96%;
-    --primary: 187 85% 72%;
-    --primary-foreground: 205 55% 7%;
-    --secondary: 207 30% 15%;
-    --secondary-foreground: 210 40% 96%;
-    --muted: 207 30% 15%;
-    --muted-foreground: 215 16% 58%;
-    --accent: 207 30% 15%;
-    --accent-foreground: 210 40% 96%;
+    --background: 220 33% 99%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 218 31% 96%;
+    --secondary-foreground: 222 47% 16%;
+    --muted: 218 31% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 214 95% 96%;
+    --accent-foreground: 217 91% 50%;
     --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 210 25% 18%;
-    --input: 210 25% 18%;
-    --ring: 187 85% 72%;
-    --chart-1: 187 85% 60%;
-    --chart-2: 263 70% 68%;
-    --chart-3: 155 65% 55%;
-    --chart-4: 37 85% 60%;
-    --chart-5: 0 75% 65%;
-    --radius: 0.75rem;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 91%;
+    --input: 220 20% 91%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 60%;
+    --chart-2: 263 83% 64%;
+    --chart-3: 160 84% 39%;
+    --chart-4: 199 89% 48%;
+    --chart-5: 25 95% 53%;
+    --radius: 0.9rem;
   }
 
   * {
@@ -36,17 +36,40 @@
   }
 
   html {
-    background: #071019;
+    background: #f8fafc;
   }
 
   body {
     @apply bg-background text-foreground;
     min-height: 100%;
+    color-scheme: light;
   }
 
   ::selection {
-    background: rgba(103, 232, 249, 0.22);
-    color: white;
+    background: rgba(59, 130, 246, 0.18);
+    color: #0f172a;
+  }
+}
+
+@layer components {
+  .obs-card {
+    @apply rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025),0_12px_30px_rgba(15,23,42,0.025)];
+  }
+
+  .obs-control {
+    @apply h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100;
+  }
+
+  .obs-kicker {
+    @apply text-xs font-semibold uppercase tracking-[0.16em] text-blue-600;
+  }
+
+  .obs-muted {
+    @apply text-slate-500;
+  }
+
+  .obs-divider {
+    @apply border-slate-200/80;
   }
 }
 

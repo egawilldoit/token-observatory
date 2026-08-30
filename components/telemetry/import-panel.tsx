@@ -61,7 +61,9 @@ async function readJsonResponse(response: Response) {
   const text = await response.text();
 
   if (!text) {
-    throw new Error("Import returned an empty response (HTTP " + response.status + ").");
+    throw new Error(
+      "Import returned an empty response (HTTP " + response.status + ").",
+    );
   }
 
   try {
@@ -85,13 +87,13 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
   const [result, setResult] = useState<ImportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const selected = useMemo(() => {
-    return (
+  const selected = useMemo(
+    () =>
       machines.find((machine) => machine.id === machineId) ??
       machines[0] ??
-      null
-    );
-  }, [machineId, machines]);
+      null,
+    [machineId, machines],
+  );
 
   const effectiveMachineId = selected?.id ?? "";
 
@@ -195,37 +197,37 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
 
   if (machines.length === 0) {
     return (
-      <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.025] p-8 text-center">
-        <AlertTriangle className="mx-auto h-7 w-7 text-amber-300" />
-        <h2 className="mt-4 text-lg font-semibold">Register a machine first</h2>
+      <div className="obs-card border-dashed p-8 text-center">
+        <div className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-amber-50 text-amber-600">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold text-slate-950">
+          Register a machine first
+        </h2>
         <p className="mt-2 text-sm text-slate-500">
-          Uploads deliberately use a controlled machine identity rather than free
-          text.
+          Uploads use a controlled machine identity rather than free text.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
-      <form
-        onSubmit={submit}
-        className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 md:p-6"
-      >
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]">
+      <form onSubmit={submit} className="obs-card p-5 md:p-6">
         <div className="flex items-start gap-3">
-          <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-2.5 text-cyan-300">
-            <UploadCloud className="h-5 w-5" />
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-600">
+            <UploadCloud className="h-[18px] w-[18px]" />
           </div>
           <div>
-            <h2 className="font-semibold">Upload snapshot</h2>
+            <h2 className="font-semibold text-slate-950">Upload snapshot</h2>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              JSON is an absolute observation. Existing overlap is compared, never
-              added.
+              JSON is an absolute observation. Existing overlap is compared,
+              never added.
             </p>
           </div>
         </div>
 
-        <label className="mt-6 block text-xs font-medium text-slate-400">
+        <label className="mt-6 block text-xs font-medium text-slate-600">
           Machine
           <select
             value={effectiveMachineId}
@@ -234,7 +236,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               setResult(null);
               setError(null);
             }}
-            className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-[#0a1620] px-3 text-sm text-slate-200 outline-none ring-cyan-400 focus:ring-1"
+            className="obs-control mt-2 w-full"
           >
             {machines.map((machine) => (
               <option key={machine.id} value={machine.id}>
@@ -244,14 +246,16 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
           </select>
         </label>
 
-        <label className="mt-4 block text-xs font-medium text-slate-400">
+        <label className="mt-5 block text-xs font-medium text-slate-600">
           ccusage JSON
-          <span className="mt-2 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-black/15 px-4 text-center transition hover:border-cyan-400/30 hover:bg-cyan-400/[0.03]">
-            <FileJson2 className="h-6 w-6 text-slate-500" />
-            <span className="mt-2 text-sm text-slate-300">
+          <span className="mt-2 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 px-4 text-center transition hover:border-blue-300 hover:bg-blue-50/40">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-white text-slate-500 shadow-sm ring-1 ring-slate-200">
+              <FileJson2 className="h-5 w-5" />
+            </span>
+            <span className="mt-3 text-sm font-medium text-slate-700">
               {file ? file.name : "Choose ccusage.json"}
             </span>
-            <span className="mt-1 text-[11px] text-slate-600">
+            <span className="mt-1 text-[11px] text-slate-400">
               {file
                 ? (file.size / 1024 / 1024).toFixed(2) + " MB"
                 : "Maximum 8 MB · raw file is preserved"}
@@ -273,7 +277,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         <button
           type="submit"
           disabled={!file || !selected || !effectiveMachineId || busy}
-          className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
         >
           {busy ? (
             <>
@@ -288,19 +292,23 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
         {error ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-red-400/20 bg-red-400/[0.07] p-3 text-sm leading-5 text-red-200"
+            className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm leading-5 text-red-700"
           >
             {error}
           </div>
         ) : null}
       </form>
 
-      <div className="space-y-4">
-        <div className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 md:p-6">
+      <div className="space-y-5">
+        <div className="obs-card p-5 md:p-6">
           <div className="flex items-start gap-3">
-            <Terminal className="mt-0.5 h-5 w-5 text-violet-300" />
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-600">
+              <Terminal className="h-4 w-4" />
+            </div>
             <div className="min-w-0">
-              <h2 className="font-semibold">Recommended collection command</h2>
+              <h2 className="font-semibold text-slate-950">
+                Recommended collection command
+              </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {selected?.lastAcceptedScopeEnd
                   ? "Three-day overlap from the latest accepted import scope."
@@ -308,8 +316,9 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               </p>
             </div>
           </div>
-          <div className="mt-4 flex min-w-0 items-start gap-2 rounded-2xl border border-white/10 bg-black/25 p-3">
-            <code className="min-w-0 flex-1 break-all text-xs leading-6 text-slate-300">
+
+          <div className="mt-4 flex min-w-0 items-start gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+            <code className="min-w-0 flex-1 break-all font-mono text-[11px] leading-5 text-slate-700">
               {selected?.command ||
                 "Collection command unavailable — reload after selecting a machine."}
             </code>
@@ -317,16 +326,23 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
               type="button"
               onClick={copyCommand}
               disabled={!selected?.command}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-[11px] text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200 disabled:opacity-40"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-700 disabled:opacity-40"
             >
               <Copy className="h-3.5 w-3.5" />
               {commandCopied ? "Copied" : "Copy"}
             </button>
           </div>
+
           {selected?.lastAcceptedScopeEnd ? (
-            <p className="mt-3 text-[11px] text-slate-600">
-              Latest accepted scope end: {selected.lastAcceptedScopeEnd} · next since:{" "}
-              {selected.nextSince}
+            <p className="mt-3 text-[11px] text-slate-400">
+              Latest accepted scope end:{" "}
+              <span className="font-medium text-slate-600">
+                {selected.lastAcceptedScopeEnd}
+              </span>
+              {" · "}next since:{" "}
+              <span className="font-medium text-emerald-600">
+                {selected.nextSince}
+              </span>
             </p>
           ) : null}
         </div>
@@ -335,19 +351,21 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
           <div
             role="status"
             aria-live="polite"
-            className="rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.05] p-5 md:p-6"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.02)] md:p-6"
           >
             <div className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-300" />
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+                <CheckCircle2 className="h-[18px] w-[18px]" />
+              </div>
               <div>
-                <p className="font-semibold">
+                <p className="font-semibold text-slate-950">
                   {result.status === "exact_duplicate"
                     ? result.crossMachineMatch
                       ? "Cross-machine match detected"
                       : "Exact duplicate skipped"
                     : "Import processed"}
                 </p>
-                <p className="mt-1 text-xs text-emerald-100/50">
+                <p className="mt-1 text-xs text-emerald-700/70">
                   Import {result.importId.slice(0, 8)}
                 </p>
               </div>
@@ -364,25 +382,27 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
                   ].map(([label, value]) => (
                     <div
                       key={String(label)}
-                      className="rounded-xl border border-white/10 bg-black/15 p-3"
+                      className="rounded-xl border border-emerald-200/80 bg-white/80 p-3"
                     >
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
                         {label}
                       </p>
-                      <p className="mt-1 text-xl font-semibold">{value}</p>
+                      <p className="mt-1 text-xl font-semibold text-slate-950">
+                        {value}
+                      </p>
                     </div>
                   ))}
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
                   <span className="text-slate-500">
                     Before{" "}
-                    <b className="text-slate-200">
+                    <b className="text-slate-800">
                       {compact(result.summary.beforeTotal)}
                     </b>
                   </span>
                   <span className="text-slate-500">
                     After{" "}
-                    <b className="text-slate-200">
+                    <b className="text-slate-800">
                       {compact(result.summary.afterTotal)}
                     </b>
                   </span>
@@ -391,8 +411,8 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
                     <b
                       className={
                         result.summary.netChange >= 0
-                          ? "text-emerald-300"
-                          : "text-amber-300"
+                          ? "text-emerald-700"
+                          : "text-amber-700"
                       }
                     >
                       {result.summary.netChange >= 0 ? "+" : ""}
@@ -404,7 +424,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
             ) : null}
 
             {result.modelBackfilled !== undefined ? (
-              <p className="mt-4 rounded-xl border border-cyan-300/15 bg-cyan-300/[0.05] p-3 text-xs leading-5 text-cyan-100/80">
+              <p className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-800">
                 Model enrichment:{" "}
                 <b>{result.modelBackfilled.toLocaleString()}</b> model
                 observation{result.modelBackfilled === 1 ? "" : "s"} added
@@ -413,18 +433,18 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
             ) : null}
 
             {result.nextCommand ? (
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/15 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white/80 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
                   Next collection
                 </p>
-                <code className="mt-2 block break-all text-[11px] leading-5 text-slate-300">
+                <code className="mt-2 block break-all font-mono text-[11px] leading-5 text-slate-700">
                   {result.nextCommand}
                 </code>
               </div>
             ) : null}
 
             {result.crossMachineMatch ? (
-              <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-xs leading-5 text-amber-100/80">
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
                 These exact bytes were also seen for{" "}
                 <b>{result.duplicateOfMachineId ?? "another machine"}</b>. The
                 Observatory keeps this as provenance evidence but still treats
