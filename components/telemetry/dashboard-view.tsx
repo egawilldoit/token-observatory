@@ -657,7 +657,7 @@ export function DashboardView({
       </header>
 
       {rows.length === 0 ? (
-        <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+        <div className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <Database className="mx-auto h-8 w-8 text-slate-500" />
           <h2 className="mt-4 text-xl font-semibold">No accepted usage yet</h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
@@ -729,7 +729,7 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-w-0 overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">
@@ -839,7 +839,7 @@ export function DashboardView({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
               <h2 className="font-semibold text-slate-900">Agent share</h2>
               <p className="mt-1 text-xs text-slate-500">
                 True share of the selected token total
@@ -881,7 +881,7 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1.55fr)_340px]">
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">Model usage</h2>
@@ -986,7 +986,7 @@ export function DashboardView({
               )}
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <h2 className="font-semibold text-slate-900">Usage detail</h2>
               <p className="mt-1 text-xs text-slate-500">
                 Selected scope at a glance
@@ -1023,7 +1023,7 @@ export function DashboardView({
           </section>
 
           <section className="mt-4 grid min-w-0 gap-4 xl:grid-cols-2 2xl:grid-cols-[.9fr_1.25fr_.9fr]">
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="mb-5">
                 <h2 className="font-semibold text-slate-900">
                   Machine contribution
@@ -1066,7 +1066,7 @@ export function DashboardView({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">Recent imports</h2>
@@ -1096,7 +1096,7 @@ export function DashboardView({
                       >
                         <div className="min-w-0">
                           <div className="flex min-w-0 items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
                             <p className="truncate text-sm font-medium text-slate-700">
                               {machineRow?.name ?? item.machine_id}
                             </p>
@@ -1110,7 +1110,7 @@ export function DashboardView({
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className="rounded-full border border-emerald-400/15 bg-emerald-500/[0.07] px-2 py-1 text-[10px] text-emerald-600">
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] text-emerald-600">
                             {item.status}
                           </span>
                           <p className="mt-2 text-xs tabular-nums text-slate-500">
@@ -1130,9 +1130,9 @@ export function DashboardView({
               </div>
             </div>
 
-            <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 xl:col-span-2 2xl:col-span-1">
+            <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 xl:col-span-2 2xl:col-span-1">
               <div className="flex items-start gap-3">
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-violet-300/15 bg-violet-300/10 text-violet-600">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-violet-100 bg-violet-50 text-violet-600">
                   <Clock3 className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
