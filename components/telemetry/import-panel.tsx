@@ -355,7 +355,7 @@ export function ImportPanel({ machines }: { machines: MachineHint[] }) {
           >
             <div className="flex items-start gap-3">
               <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
-                <CheckCircle2 className="h-4.5 w-4.5" />
+                <CheckCircle2 className="h-[18px] w-[18px]" />
               </div>
               <div>
                 <p className="font-semibold text-slate-950">
