@@ -263,7 +263,9 @@ export function DashboardView({
     () =>
       rows.filter(
         (row) =>
-          (machine === "all" || row.machine_id === machine) &&
+          (machine === "all"
+            ? !row.global_duplicate
+            : row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
           (!rangeStart || row.usage_date >= rangeStart),
       ),
@@ -277,7 +279,9 @@ export function DashboardView({
           modelRows
             .filter(
               (row) =>
-                (machine === "all" || row.machine_id === machine) &&
+                (machine === "all"
+                  ? !row.global_duplicate
+                  : row.machine_id === machine) &&
                 (agent === "all" || row.agent === agent) &&
                 (!rangeStart || row.usage_date >= rangeStart),
             )
@@ -291,7 +295,9 @@ export function DashboardView({
     () =>
       modelRows.filter(
         (row) =>
-          (machine === "all" || row.machine_id === machine) &&
+          (machine === "all"
+            ? !row.global_duplicate
+            : row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
           (model === "all" || row.model === model) &&
           (!rangeStart || row.usage_date >= rangeStart),
@@ -311,7 +317,9 @@ export function DashboardView({
     () =>
       modelRows.filter(
         (row) =>
-          (machine === "all" || row.machine_id === machine) &&
+          (machine === "all"
+            ? !row.global_duplicate
+            : row.machine_id === machine) &&
           (agent === "all" || row.agent === agent) &&
           (!rangeStart || row.usage_date >= rangeStart),
       ),
