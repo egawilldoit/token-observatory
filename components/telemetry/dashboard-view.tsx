@@ -182,7 +182,7 @@ function Metric({
   return (
     <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-9500">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-500">
           {label}
         </p>
         <span
@@ -197,7 +197,7 @@ function Metric({
       <p className="mt-3 text-[1.7rem] font-semibold leading-none tracking-[-0.045em] text-slate-950">
         {value}
       </p>
-      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-9500">
+      <p className="mt-2 min-h-4 text-[11px] leading-4 text-slate-500">
         {detail}
       </p>
       {progress !== undefined ? (
@@ -576,8 +576,8 @@ export function DashboardView({
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs transition",
                     range === value
-                      ? "bg-blue-50 text-white"
-                      : "text-slate-9500 hover:text-slate-700",
+                      ? "bg-blue-50 text-blue-700 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700",
                   ].join(" ")}
                 >
                   {label}
@@ -598,8 +598,8 @@ export function DashboardView({
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs capitalize transition",
                     granularity === value
-                      ? "bg-blue-50 text-white"
-                      : "text-slate-9500 hover:text-slate-700",
+                      ? "bg-blue-50 text-blue-700 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700",
                   ].join(" ")}
                 >
                   {value}
@@ -613,7 +613,7 @@ export function DashboardView({
                 setMachine(event.target.value);
                 setModel("all");
               }}
-              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100"
+              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-2 focus:ring-blue-100"
             >
               <option value="all">All machines</option>
               {machines.map((item) => (
@@ -629,7 +629,7 @@ export function DashboardView({
                 setAgent(event.target.value);
                 setModel("all");
               }}
-              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100"
+              className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-2 focus:ring-blue-100"
             >
               <option value="all">All agents</option>
               {agents.map((item) => (
@@ -643,7 +643,7 @@ export function DashboardView({
               value={model}
               onChange={(event) => setModel(event.target.value)}
               disabled={models.length === 0}
-              className="h-10 min-w-0 max-w-[260px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-blue-100 disabled:opacity-40"
+              className="h-10 min-w-0 max-w-[260px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none ring-blue-400 focus:ring-2 focus:ring-blue-100 disabled:opacity-40"
             >
               <option value="all">All models</option>
               {models.map((item) => (
@@ -657,10 +657,10 @@ export function DashboardView({
       </header>
 
       {rows.length === 0 ? (
-        <div className="mt-8 rounded-3xl border border-dashed border-white/15 bg-white/[0.025] px-6 py-16 text-center">
+        <div className="mt-8 rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <Database className="mx-auto h-8 w-8 text-slate-500" />
           <h2 className="mt-4 text-xl font-semibold">No accepted usage yet</h2>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-9500">
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
             Register a machine, then import your first pinned ccusage daily JSON.
           </p>
         </div>
@@ -739,13 +739,13 @@ export function DashboardView({
                         ? "Weekly token burn"
                         : "Monthly token burn"}
                   </h2>
-                  <p className="mt-1 text-xs text-slate-9500">
+                  <p className="mt-1 text-xs text-slate-500">
                     {model === "all"
                       ? "Canonical tokens grouped from latest accepted rows"
                       : "Model-attributed canonical tokens for " + model}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-9500">
+                <span className="shrink-0 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
                   {byPeriod.length}{" "}
                   {granularity === "day"
                     ? "days"
@@ -841,7 +841,7 @@ export function DashboardView({
 
             <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
               <h2 className="font-semibold text-slate-900">Agent share</h2>
-              <p className="mt-1 text-xs text-slate-9500">
+              <p className="mt-1 text-xs text-slate-500">
                 True share of the selected token total
               </p>
 
@@ -885,12 +885,12 @@ export function DashboardView({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">Model usage</h2>
-                  <p className="mt-1 text-xs text-slate-9500">
+                  <p className="mt-1 text-xs text-slate-500">
                     Per-model attribution from ccusage modelBreakdowns
                   </p>
                 </div>
                 {modelRows.length ? (
-                  <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-9500">
+                  <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
                     {models.length} models · {modelCoverage.toFixed(1)}% covered
                   </span>
                 ) : null}
@@ -901,7 +901,7 @@ export function DashboardView({
                   <p className="text-sm font-medium text-slate-800">
                     Model detail is still in the preserved raw snapshot.
                   </p>
-                  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-9500">
+                  <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-500">
                     Load it from the private raw import. This enriches model
                     analytics only; the certified canonical token total is not
                     re-added or changed.
@@ -938,7 +938,7 @@ export function DashboardView({
                         <th className="pb-3 text-right font-medium">Cost</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.06]">
+                    <tbody className="divide-y divide-slate-100">
                       {topModels.map((item) => {
                         const share = modelAttributedTotal
                           ? (item.total / modelAttributedTotal) * 100
@@ -968,10 +968,10 @@ export function DashboardView({
                             <td className="py-3 text-right tabular-nums text-slate-700">
                               {compact(item.total)}
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-9500">
+                            <td className="py-3 text-right tabular-nums text-slate-500">
                               {share.toFixed(1)}%
                             </td>
-                            <td className="py-3 text-right tabular-nums text-slate-9500">
+                            <td className="py-3 text-right tabular-nums text-slate-500">
                               {cacheShareForModel.toFixed(1)}%
                             </td>
                             <td className="py-3 text-right tabular-nums text-slate-500">
@@ -988,7 +988,7 @@ export function DashboardView({
 
             <div className="min-w-0 rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <h2 className="font-semibold text-slate-900">Usage detail</h2>
-              <p className="mt-1 text-xs text-slate-9500">
+              <p className="mt-1 text-xs text-slate-500">
                 Selected scope at a glance
               </p>
 
@@ -1028,7 +1028,7 @@ export function DashboardView({
                 <h2 className="font-semibold text-slate-900">
                   Machine contribution
                 </h2>
-                <p className="mt-1 text-xs text-slate-9500">
+                <p className="mt-1 text-xs text-slate-500">
                   Physical sources contributing to this view
                 </p>
               </div>
@@ -1070,7 +1070,7 @@ export function DashboardView({
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">Recent imports</h2>
-                  <p className="mt-1 text-xs text-slate-9500">
+                  <p className="mt-1 text-xs text-slate-500">
                     Latest snapshot outcomes
                   </p>
                 </div>
@@ -1082,7 +1082,7 @@ export function DashboardView({
                 </a>
               </div>
 
-              <div className="divide-y divide-white/[0.06]">
+              <div className="divide-y divide-slate-100">
                 {visibleImports.length ? (
                   visibleImports.map((item) => {
                     const machineRow = machines.find(
@@ -1113,7 +1113,7 @@ export function DashboardView({
                           <span className="rounded-full border border-emerald-400/15 bg-emerald-500/[0.07] px-2 py-1 text-[10px] text-emerald-600">
                             {item.status}
                           </span>
-                          <p className="mt-2 text-xs tabular-nums text-slate-9500">
+                          <p className="mt-2 text-xs tabular-nums text-slate-500">
                             {netChange === null
                               ? "—"
                               : (netChange >= 0 ? "+" : "") + compact(netChange)}
@@ -1123,7 +1123,7 @@ export function DashboardView({
                     );
                   })
                 ) : (
-                  <p className="py-6 text-sm text-slate-9500">
+                  <p className="py-6 text-sm text-slate-500">
                     No imports match this machine filter.
                   </p>
                 )}
@@ -1139,7 +1139,7 @@ export function DashboardView({
                   <h2 className="font-semibold text-slate-900">
                     Recommended collection
                   </h2>
-                  <p className="mt-1 text-xs text-slate-9500">
+                  <p className="mt-1 text-xs text-slate-500">
                     {activeCollection
                       ? "Three-day reconciliation overlap"
                       : "No machine available"}
