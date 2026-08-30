@@ -37,13 +37,13 @@ async function ImportsRuntime() {
   return (
     <>
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
           Ingestion
         </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em]">
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950 md:text-[2rem]">
           Import ccusage snapshots
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
           Same-machine exact datasets are skipped, overlapping days are diffed,
           and only canonical changes are promoted.
         </p>
@@ -53,16 +53,16 @@ async function ImportsRuntime() {
         <ImportPanel machines={machines} />
       </div>
 
-      <section className="mt-4 rounded-3xl border border-white/10 bg-white/[0.035] p-5">
+      <section className="mt-5 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.025)]">
         <div className="mb-5">
-          <h2 className="font-semibold">Recent imports</h2>
+          <h2 className="font-semibold text-slate-950">Recent imports</h2>
           <p className="mt-1 text-xs text-slate-500">
             Raw provenance and processing outcome
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-xs">
-            <thead className="text-[10px] uppercase tracking-wider text-slate-600">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="pb-3 font-medium">Created</th>
                 <th className="pb-3 font-medium">Machine</th>
@@ -72,11 +72,11 @@ async function ImportsRuntime() {
                 <th className="pb-3 font-medium">Hash</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.06]">
+            <tbody className="divide-y divide-slate-100">
               {recent.map((item) => {
                 const summary = item.summary ?? {};
                 return (
-                  <tr key={item.id} className="text-slate-400">
+                  <tr key={item.id} className="text-slate-500">
                     <td className="py-3 pr-4">
                       {new Intl.DateTimeFormat("en-GB", {
                         month: "short",
@@ -85,7 +85,7 @@ async function ImportsRuntime() {
                         minute: "2-digit",
                       }).format(new Date(item.created_at))}
                     </td>
-                    <td className="py-3 pr-4 font-medium text-slate-300">
+                    <td className="py-3 pr-4 font-medium text-slate-700">
                       {item.machine_id}
                     </td>
                     <td className="py-3 pr-4">
@@ -94,7 +94,7 @@ async function ImportsRuntime() {
                         : "—"}
                     </td>
                     <td className="py-3 pr-4">
-                      <span className="rounded-full border border-white/10 px-2 py-1">
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-medium text-emerald-700">
                         {item.status}
                       </span>
                     </td>
@@ -103,7 +103,7 @@ async function ImportsRuntime() {
                         ? compact(summary.netChange)
                         : "—"}
                     </td>
-                    <td className="py-3 font-mono text-slate-600">
+                    <td className="py-3 font-mono text-slate-500">
                       {item.raw_sha256.slice(0, 10)}
                       {item.cross_machine_match ? " · cross-machine match" : ""}
                     </td>
@@ -112,7 +112,7 @@ async function ImportsRuntime() {
               })}
               {recent.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-600">
+                  <td colSpan={6} className="py-8 text-center text-slate-500">
                     No imports yet.
                   </td>
                 </tr>
