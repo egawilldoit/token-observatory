@@ -376,6 +376,7 @@ export async function POST(request: Request) {
     .eq("raw_sha256", rawSha)
     .eq("status", "processed")
     .neq("machine_id", machineId)
+    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
