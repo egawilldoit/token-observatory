@@ -101,7 +101,9 @@ function evidenceForPair(
     existingIdentity.size,
   );
   const exactOverlapRatio =
-    denominator > 0 ? exactSessionMatches / denominator : 0;
+    denominator > 0
+      ? Math.min(1, exactSessionMatches / denominator)
+      : 0;
 
   const matchedRows = incomingRows.filter((row) =>
     existingMirror.has(row.mirror_hash),
