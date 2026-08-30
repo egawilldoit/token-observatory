@@ -321,8 +321,8 @@ begin
   )
   select
     d.id,
-    x.canonical_observation_id,
-    x.canonical_machine_id,
+    canonical.id,
+    canonical.machine_id,
     x.reason,
     x.matched_session_count,
     x.session_overlap_ratio,
@@ -342,6 +342,18 @@ begin
    and d.agent = x.agent
    and d.usage_date = x.usage_date
    and not d.is_tombstone
+  join public.daily_usage_observations canonical
+    on canonical.id = x.canonical_observation_id
+   and canonical.machine_id = x.canonical_machine_id
+   and canonical.machine_id <> d.machine_id
+   and canonical.agent = d.agent
+   and canonical.usage_date = d.usage_date
+   and canonical.input_tokens = d.input_tokens
+   and canonical.output_tokens = d.output_tokens
+   and canonical.cache_read_tokens = d.cache_read_tokens
+   and canonical.cache_creation_tokens = d.cache_creation_tokens
+   and canonical.reported_total_tokens = d.reported_total_tokens
+   and not canonical.is_tombstone
   on conflict (observation_id) do update
   set
     canonical_observation_id = excluded.canonical_observation_id,
