@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { getObservatoryAccess } from "@/lib/auth/require-user";
+import { analyzeCrossMachineDuplicates } from "@/lib/ccusage/cross-machine-dedupe";
 import {
   diffDailyModelUsage,
   diffDailyUsage,
@@ -12,6 +13,7 @@ import { parseCcusageDaily } from "@/lib/ccusage/parser";
 import type {
   CurrentDailyModelUsageRow,
   CurrentDailyUsageRow,
+  StoredSessionEvidenceRow,
 } from "@/lib/ccusage/types";
 import {
   decodeUtf8Strict,
@@ -261,6 +263,7 @@ export async function POST(request: Request) {
 
   if (existing?.status === "processed") {
     let modelBackfilled = 0;
+    let sessionBackfilled = 0;
 
     if (parsed.modelRows.length > 0) {
       const { data: modelBackfill, error: modelBackfillError } =
@@ -277,6 +280,25 @@ export async function POST(request: Request) {
       }
 
       modelBackfilled = Number(modelBackfill?.insertedModelRows ?? 0);
+    }
+
+    if (parsed.sessionRows.length > 0) {
+      const { data: sessionBackfill, error: sessionBackfillError } =
+        await supabase.rpc("backfill_ccusage_sessions", {
+          p_import_id: existing.id,
+          p_session_rows: parsed.sessionRows,
+        });
+
+      if (sessionBackfillError) {
+        return NextResponse.json(
+          { error: "Could not backfill session dedupe evidence for this import." },
+          { status: 500 },
+        );
+      }
+
+      sessionBackfilled = Number(
+        sessionBackfill?.insertedSessionRows ?? 0,
+      );
     }
 
     const duplicateId = randomUUID();
@@ -307,6 +329,8 @@ export async function POST(request: Request) {
       duplicateOfImportId: existing.id,
       crossMachineMatch: false,
       modelBackfilled,
+      sessionBackfilled,
+      sessionEvidenceCount: parsed.sessionRows.length,
       models: parsed.models,
       nextCommand: existing.scope_end
         ? buildCcusageCommand(nextSinceFromDate(existing.scope_end))
@@ -352,6 +376,7 @@ export async function POST(request: Request) {
     .eq("raw_sha256", rawSha)
     .eq("status", "processed")
     .neq("machine_id", machineId)
+    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
 
@@ -471,7 +496,7 @@ export async function POST(request: Request) {
   }
 
   const { data: currentData, error: currentError } = await supabase
-    .from("v_current_daily_usage")
+    .from("v_current_daily_usage_dedupe")
     .select("*")
     .eq("machine_id", machineId);
 
@@ -492,6 +517,34 @@ export async function POST(request: Request) {
     await markFailed(importId, currentModelError.message);
     return NextResponse.json(
       { error: "Could not read canonical model usage state." },
+      { status: 500 },
+    );
+  }
+
+  const { data: otherDailyData, error: otherDailyError } = await supabase
+    .from("v_current_daily_usage_dedupe")
+    .select("*")
+    .neq("machine_id", machineId)
+    .eq("global_duplicate", false);
+
+  if (otherDailyError) {
+    await markFailed(importId, otherDailyError.message);
+    return NextResponse.json(
+      { error: "Could not read cross-machine daily evidence." },
+      { status: 500 },
+    );
+  }
+
+  const { data: otherSessionData, error: otherSessionError } = await supabase
+    .from("session_usage_observations")
+    .select("*")
+    .neq("machine_id", machineId)
+    .in("agent", parsed.agents);
+
+  if (otherSessionError) {
+    await markFailed(importId, otherSessionError.message);
+    return NextResponse.json(
+      { error: "Could not read cross-machine session evidence." },
       { status: 500 },
     );
   }
@@ -532,6 +585,46 @@ export async function POST(request: Request) {
     ...modelDiff.removedRows,
   ];
 
+  const crossMachineAnalysis = analyzeCrossMachineDuplicates({
+    incomingDaily: parsed.rows,
+    incomingSessions: parsed.sessionRows,
+    existingDaily: (otherDailyData ?? []) as CurrentDailyUsageRow[],
+    existingSessions: (otherSessionData ?? []) as StoredSessionEvidenceRow[],
+    rawDuplicateMachineId: sameHashElsewhere?.machine_id ?? null,
+  });
+
+  const dedupeLinks = crossMachineAnalysis.links;
+  const currentLocalByKey = new Map(
+    ((currentData ?? []) as CurrentDailyUsageRow[]).map((row) => [
+      row.agent + "|" + row.usage_date,
+      row,
+    ]),
+  );
+  const writtenDailyKeys = new Set(
+    rowsToWrite
+      .filter((row) => !row.is_tombstone)
+      .map((row) => row.agent + "|" + row.usage_date),
+  );
+  const duplicateTokensPrevented = dedupeLinks.reduce((total, link) => {
+    const key = link.agent + "|" + link.usage_date;
+    const currentLocal = currentLocalByKey.get(key);
+    if (!writtenDailyKeys.has(key) && currentLocal?.global_duplicate) {
+      return total;
+    }
+    const row = parsed.rows.find(
+      (item) =>
+        item.agent === link.agent &&
+        item.usage_date === link.usage_date &&
+        !item.is_tombstone,
+    );
+    return total + (row?.reported_total_tokens ?? 0);
+  }, 0);
+  const sessionMatchDetected =
+    crossMachineAnalysis.exactSessionMatches > 0 ||
+    crossMachineAnalysis.identityMatches > 0;
+  const crossMachineMatch =
+    Boolean(sameHashElsewhere) || sessionMatchDetected;
+
   const summary = {
     new: diff.newRows.length,
     revised: diff.revisedRows.length,
@@ -552,13 +645,35 @@ export async function POST(request: Request) {
     scopeEnd: parsed.scopeEnd,
     warnings: parsed.warnings,
     sourceShape: parsed.sourceShape,
-    crossMachineMatch: Boolean(sameHashElsewhere),
+    crossMachineMatch,
+    sessionEvidence: {
+      imported: parsed.sessionRows.length,
+      exactCrossMachineMatches: crossMachineAnalysis.exactSessionMatches,
+      identityCrossMachineMatches: crossMachineAnalysis.identityMatches,
+      partialMirrorRisk: crossMachineAnalysis.partialMirrorRisk,
+      strongMirrors: crossMachineAnalysis.evidence
+        .filter((item) => item.strong)
+        .map((item) => ({
+          machineId: item.machineId,
+          agent: item.agent,
+          exactSessionMatches: item.exactSessionMatches,
+          exactOverlapRatio: item.exactOverlapRatio,
+          evidenceStart: item.evidenceStart,
+          evidenceEnd: item.evidenceEnd,
+        })),
+    },
+    globalDedupe: {
+      rowsSuppressed: dedupeLinks.length,
+      duplicateTokensPrevented,
+    },
   };
 
-  const { error: rpcError } = await supabase.rpc("process_ccusage_import_v2", {
+  const { error: rpcError } = await supabase.rpc("process_ccusage_import_v3", {
     p_import_id: importId,
     p_rows: rowsToWrite,
     p_model_rows: modelRowsToWrite,
+    p_session_rows: parsed.sessionRows,
+    p_dedupe_links: dedupeLinks,
     p_summary: summary,
   });
 
@@ -573,8 +688,10 @@ export async function POST(request: Request) {
   return NextResponse.json({
     status: "processed",
     importId,
-    crossMachineMatch: Boolean(sameHashElsewhere),
-    duplicateOfMachineId: sameHashElsewhere?.machine_id,
+    crossMachineMatch,
+    duplicateOfMachineId:
+      sameHashElsewhere?.machine_id ??
+      crossMachineAnalysis.evidence.find((item) => item.strong)?.machineId,
     summary,
     nextCommand: buildCcusageCommand(nextSinceFromDate(parsed.scopeEnd)),
   });

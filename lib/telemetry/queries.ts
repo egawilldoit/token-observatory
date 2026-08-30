@@ -35,10 +35,20 @@ type MachineCollectionStateRow = {
   last_scope_end: string | null;
 };
 
+type MachineSessionEvidenceStateRow = {
+  machine_id: string;
+  session_count: number | string;
+  mirror_fingerprint_count: number | string;
+  last_session_evidence_at: string | null;
+};
+
 export type MachineCollectionHint = MachineRow & {
   lastAcceptedScopeEnd: string | null;
   nextSince: string | null;
   command: string;
+  sessionEvidenceCount: number;
+  mirrorFingerprintCount: number;
+  lastSessionEvidenceAt: string | null;
 };
 
 export async function getMachines(): Promise<MachineRow[]> {
@@ -58,7 +68,7 @@ export async function getCurrentDailyUsage(): Promise<CurrentDailyUsageRow[]> {
   if (!isTelemetryConfigured()) return [];
   const supabase = createAdminClient();
   const { data, error } = await supabase
-    .from("v_current_daily_usage")
+    .from("v_current_daily_usage_dedupe")
     .select("*")
     .order("usage_date", { ascending: true });
 
@@ -72,7 +82,7 @@ export async function getCurrentDailyModelUsage(): Promise<
   if (!isTelemetryConfigured()) return [];
   const supabase = createAdminClient();
   const { data, error } = await supabase
-    .from("v_current_daily_model_usage")
+    .from("v_current_daily_model_usage_dedupe")
     .select("*")
     .order("usage_date", { ascending: true });
 
@@ -107,24 +117,54 @@ async function getMachineCollectionState(): Promise<MachineCollectionStateRow[]>
   return (data ?? []) as MachineCollectionStateRow[];
 }
 
-export async function getMachineCollectionHints(): Promise<MachineCollectionHint[]> {
-  const [machines, stateRows] = await Promise.all([
+async function getMachineSessionEvidenceState(): Promise<
+  MachineSessionEvidenceStateRow[]
+> {
+  if (!isTelemetryConfigured()) return [];
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("v_machine_session_evidence_state")
+    .select(
+      "machine_id,session_count,mirror_fingerprint_count,last_session_evidence_at",
+    );
+
+  if (error) throw error;
+  return (data ?? []) as MachineSessionEvidenceStateRow[];
+}
+
+export async function getMachineCollectionHints(): Promise<
+  MachineCollectionHint[]
+> {
+  const [machines, stateRows, sessionRows] = await Promise.all([
     getMachines(),
     getMachineCollectionState(),
+    getMachineSessionEvidenceState(),
   ]);
 
   const lastScopeEndByMachine = new Map(
     stateRows.map((row) => [row.machine_id, row.last_scope_end] as const),
   );
+  const sessionsByMachine = new Map(
+    sessionRows.map((row) => [row.machine_id, row] as const),
+  );
 
   return machines.map((machine) => {
     const lastDate = lastScopeEndByMachine.get(machine.id) ?? null;
     const since = nextSinceFromDate(lastDate);
+    const sessionState = sessionsByMachine.get(machine.id);
+
     return {
       ...machine,
       lastAcceptedScopeEnd: lastDate,
       nextSince: since,
       command: buildCcusageCommand(since),
+      sessionEvidenceCount: Number(sessionState?.session_count ?? 0),
+      mirrorFingerprintCount: Number(
+        sessionState?.mirror_fingerprint_count ?? 0,
+      ),
+      lastSessionEvidenceAt:
+        sessionState?.last_session_evidence_at ?? null,
     };
   });
 }

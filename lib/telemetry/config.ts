@@ -56,6 +56,8 @@ export function buildCcusageCommand(since?: string | null) {
     "npx",
     "ccusage@" + SUPPORTED_CCUSAGE_VERSION,
     "daily",
+    "--sections",
+    "daily,session",
     "--by-agent",
     "--breakdown",
     "--timezone",

@@ -26,8 +26,9 @@ Weekly, monthly, and lifetime totals are derived from that current daily view.
    future-dated telemetry in `Africa/Casablanca`, and validates the snapshot.
 6. If those exact raw bytes are already processing or processed for the same
    machine, the attempt is recorded as `exact_duplicate` and is not promoted
-   again. An exact hash seen on another machine is flagged as provenance evidence,
-   but is not assumed to represent the same underlying usage event.
+   again. Across machines, exact raw bytes are strong mirror evidence but a daily
+   row is suppressed globally only after Postgres verifies the same agent/date and
+   exact token counters on the canonical source row.
 7. Stale `processing` imports older than 15 minutes are failed before claiming
    new work.
 8. A database partial unique index permits only one active processing import per
@@ -47,8 +48,17 @@ Weekly, monthly, and lifetime totals are derived from that current daily view.
     This deliberately supports state reversion such as A → B → A.
 14. One Postgres RPC inserts changed/tombstone observations and marks the import
     processed atomically.
-15. The dashboard reads only the latest non-tombstone revision from
-    `v_current_daily_usage`.
+15. Session rows are stored as immutable provenance evidence. Session totals are
+    never subtracted directly from daily totals because sessions can span calendar
+    days.
+16. Cross-machine analysis can link a daily row to another machine only when the
+    daily counters match exactly. Non-byte-identical exports additionally require
+    at least two exact session fingerprints and at least 80% session overlap for
+    the agent inside the evidence window. Partial overlap stays counted and is
+    warning-only.
+17. The dashboard reads dedupe-aware current views. A specific machine always
+    shows its complete local truth; only the all-machines view removes proven
+    mirror rows.
 
 ## Overlap collection
 
@@ -65,13 +75,27 @@ never change.
 
 ## Exact duplicates vs mirrors
 
-SHA-256 equality proves byte identity, not event identity. It is therefore a hard
-duplicate only within the same registered machine. Across machines it is recorded
-as a warning because two independent machines can legitimately produce identical
-exports.
+SHA-256 equality is a hard duplicate within the same registered machine.
 
-V1 does **not** attempt semantic cross-machine mirror/fork resolution. Stable
-machine identity remains part of canonical truth.
+Across machines, byte-identical raw exports are treated as strong provenance
+evidence, but suppression is still attached at daily-row grain. The database
+independently requires the source and canonical rows to be on different machines,
+share the same agent/date, and have identical input, output, cache-read,
+cache-creation, and total counters.
+
+For non-identical raw exports, session fingerprints add conservative evidence.
+The current automatic threshold is at least two exact matching session
+fingerprints and at least 80% overlap for that agent. Session identity overlap
+without exact session content, or session evidence paired with divergent daily
+token counters, is warning-only.
+
+A session is never used as a token subtraction unit. ccusage session summaries can
+span calendar days, so session totals cannot be mapped safely onto a daily bucket
+without event-level data.
+
+Dedupe links are revision-safe. If either the source row or its canonical target
+is later revised or tombstoned, the old link no longer marks the new current row
+as a global duplicate.
 
 ## Cost
 
@@ -112,10 +136,9 @@ permissions, and narrow CSP headers.
 
 ## Deferred
 
-Sessions, projects, canonical model mapping, pricing provenance, and semantic
-cross-machine mirror/fork detection for non-identical exports are intentionally
-deferred. Raw `--breakdown` exports are preserved so these dimensions can be
-backfilled later.
+Projects, canonical model mapping, pricing provenance, and ambiguous partial
+mirror resolution remain deferred. Partial session overlap is surfaced for review
+rather than guessed into a subtraction.
 
 
 ## Model telemetry
@@ -135,3 +158,22 @@ For imports processed before model telemetry existed,
 `POST /api/models/backfill` reads the already-preserved private raw object,
 re-parses its model breakdowns, and idempotently inserts model observations
 against the original processed import.
+
+
+## Session evidence and backfill
+
+Normal exports include `--sections daily,session`. The parser accepts both the
+unified session shape, where the session identifier is the row period, and focused
+session fields such as `sessionId`, `firstActivity`, and `lastActivity`.
+
+Three session identities are derived:
+- a local-key hash that may include project path to disambiguate local records;
+- a stable identity hash from agent + session ID;
+- a mirror fingerprint from agent, session ID, activity metadata, token counters,
+  and models, excluding price and local path.
+
+The raw project path itself is not persisted in session evidence.
+
+`POST /api/sessions/backfill` re-parses already-preserved raw imports for one
+machine and idempotently calls `backfill_ccusage_sessions`. It changes evidence
+coverage only, never canonical daily or model totals.

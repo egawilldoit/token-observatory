@@ -1,7 +1,7 @@
 # Token Observatory
 
 A Next.js + Supabase telemetry application for aggregating ccusage token
-consumption across several development machines without double-counting overlapping snapshots within each registered machine.
+consumption across several development machines without double-counting overlapping snapshots or proven cross-machine mirrors.
 
 ## V1 behavior
 
@@ -10,8 +10,10 @@ consumption across several development machines without double-counting overlapp
 - Upload the JSON manually.
 - Preserve accepted raw files in a private Supabase Storage bucket.
 - Reject exact duplicate raw datasets by SHA-256 within the same machine.
-- Flag byte-identical exports seen on another machine without assuming they are
-  the same underlying usage event.
+- Treat byte-identical exports across machines as strong provenance evidence and
+  suppress only daily rows whose token counters also match.
+- Collect immutable session fingerprints and use them as a second, conservative
+  cross-machine mirror signal. Partial overlap is warning-only.
 - Permit only one active import per machine; stale processing imports are recovered
   automatically.
 - Strictly decode UTF-8, reject future-dated telemetry, and require every per-agent
@@ -21,7 +23,8 @@ consumption across several development machines without double-counting overlapp
   when an agent or an entire previously-observed day disappears inside the covered
   overlap.
 - Keep revision identity per import so a state can safely change A → B → A.
-- Derive the dashboard exclusively from the latest processed observation.
+- Preserve full per-machine truth while excluding only proven mirrored daily rows
+  from the all-machines dashboard.
 - Recommend the next collection command from the latest processed import scope,
   with a three-day overlap.
 - Restrict server-side telemetry access to an explicit email allowlist.
@@ -31,7 +34,7 @@ consumption across several development machines without double-counting overlapp
 First import:
 
 ```bash
-npx ccusage@20.0.20 daily --by-agent --breakdown --timezone Africa/Casablanca --json > ccusage.json
+npx ccusage@20.0.20 daily --sections daily,session --by-agent --breakdown --timezone Africa/Casablanca --json > ccusage.json
 ```
 
 Later imports use the command shown by the application. It adds `--since` with
@@ -55,6 +58,8 @@ a three-calendar-day overlap.
 supabase/migrations/20260829_001_ccusage_v1.sql
 supabase/migrations/20260829_002_collection_state.sql
 supabase/migrations/20260830_003_model_telemetry.sql
+supabase/migrations/20260830_004_cross_machine_session_dedupe.sql
+supabase/migrations/20260830_005_cross_machine_dedupe_indexes.sql
 ```
 
 The migrations create:
@@ -66,9 +71,16 @@ The migrations create:
 - `v_machine_collection_state`
 - `daily_model_usage_observations`
 - `v_current_daily_model_usage`
+- `session_usage_observations`
+- `cross_machine_daily_dedupe`
+- `v_current_daily_usage_dedupe`
+- `v_current_daily_model_usage_dedupe`
+- `v_machine_session_evidence_state`
 - `process_ccusage_import(...)`
 - `process_ccusage_import_v2(...)`
 - `backfill_ccusage_models(...)`
+- `backfill_ccusage_sessions(...)`
+- `process_ccusage_import_v3(...)`
 - private Storage bucket `raw-imports`
 - per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
 
@@ -102,9 +114,10 @@ dedupe rules.
 
 ## Deferred deliberately
 
-Sessions, projects, canonical model mapping, pricing provenance, and semantic
-mirror/fork detection for *non-identical* exports are future layers. Raw
-`--breakdown` files are retained so those dimensions can be backfilled.
+Projects, canonical model mapping, pricing provenance, and ambiguous partial
+cross-machine mirrors remain deferred. Session evidence is intentionally
+conservative: it can prove a mirror only when exact daily token content also
+matches; otherwise the data stays counted and is flagged for review.
 
 
 ## Model telemetry
@@ -118,3 +131,23 @@ double-counting the certified token total.
 Existing processed imports can be enriched from their private raw Storage object
 through the authenticated `POST /api/models/backfill` route. The operation is
 idempotent and only inserts missing model observations.
+
+
+## Cross-machine mirror protection
+
+Session evidence is stored at `machine × agent × session` as hashes plus token
+and activity metadata. Raw project paths are used only when deriving a local-key
+hash and are not persisted in the session evidence row.
+
+Global suppression requires exact daily token equality with another current
+machine row. For non-byte-identical exports, it additionally requires at least two
+exact matching session fingerprints with at least 80% overlap for that agent.
+Session overlap by itself never subtracts token totals because a session can span
+multiple calendar days.
+
+Machine-filtered dashboard views always show the complete local machine truth.
+Only the all-machines view excludes rows proven to be mirrors.
+
+Processed imports created before session telemetry can be enriched from their
+private raw Storage object via `POST /api/sessions/backfill`. This inserts
+evidence only and never re-adds canonical usage.
