@@ -18,6 +18,8 @@ export type SessionMirrorEvidence = {
   exactOverlapRatio: number;
   evidenceStart: string | null;
   evidenceEnd: string | null;
+  riskStart: string | null;
+  riskEnd: string | null;
   strong: boolean;
 };
 
@@ -108,6 +110,9 @@ function evidenceForPair(
   const matchedRows = incomingRows.filter((row) =>
     existingMirror.has(row.mirror_hash),
   );
+  const identityMatchedRows = incomingRows.filter((row) =>
+    existingIdentity.has(row.identity_hash),
+  );
   const startDates = matchedRows
     .map((row) => dateOnly(row.first_activity ?? row.last_activity))
     .filter((value): value is string => Boolean(value))
@@ -119,6 +124,16 @@ function evidenceForPair(
 
   const evidenceStart = startDates[0] ?? null;
   const evidenceEnd = endDates.at(-1) ?? null;
+  const riskStartDates = identityMatchedRows
+    .map((row) => dateOnly(row.first_activity ?? row.last_activity))
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const riskEndDates = identityMatchedRows
+    .map((row) => dateOnly(row.last_activity ?? row.first_activity))
+    .filter((value): value is string => Boolean(value))
+    .sort();
+  const riskStart = riskStartDates[0] ?? evidenceStart;
+  const riskEnd = riskEndDates.at(-1) ?? evidenceEnd;
   const strong =
     exactSessionMatches >= MIN_STRONG_SESSION_MATCHES &&
     exactOverlapRatio >= MIN_STRONG_SESSION_OVERLAP &&
@@ -135,6 +150,8 @@ function evidenceForPair(
     exactOverlapRatio,
     evidenceStart,
     evidenceEnd,
+    riskStart,
+    riskEnd,
     strong,
   };
 }
@@ -181,8 +198,6 @@ export function analyzeCrossMachineDuplicates({
         Boolean(existing.id) &&
         exactDailyUsageMatch(incoming, existing),
     );
-    if (exactCandidates.length === 0) continue;
-
     let chosen: CurrentDailyUsageRow | undefined;
     let chosenEvidence: SessionMirrorEvidence | undefined;
     let reason: CrossMachineDailyLink["reason"] | undefined;
@@ -225,17 +240,17 @@ export function analyzeCrossMachineDuplicates({
     }
 
     if (!chosen || !reason) {
-      const candidateMachines = new Set(
-        exactCandidates.map((candidate) => candidate.machine_id),
+      const relevantEvidence = evidence.filter(
+        (item) =>
+          item.agent === incoming.agent &&
+          (item.exactSessionMatches > 0 || item.identityMatches > 0) &&
+          (item.riskStart === null ||
+            item.riskEnd === null ||
+            (incoming.usage_date >= item.riskStart &&
+              incoming.usage_date <= item.riskEnd)),
       );
-      if (
-        evidence.some(
-          (item) =>
-            item.agent === incoming.agent &&
-            candidateMachines.has(item.machineId) &&
-            (item.exactSessionMatches > 0 || item.identityMatches > 0),
-        )
-      ) {
+
+      if (relevantEvidence.length > 0) {
         partialMirrorRisk = true;
       }
       continue;
