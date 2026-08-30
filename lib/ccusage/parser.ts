@@ -1,8 +1,13 @@
-import { modelUsageHash, usageHash } from "./hash";
+import {
+  modelUsageHash,
+  sessionHashes,
+  usageHash,
+} from "./hash";
 import type {
   DailyModelUsageObservationInput,
   DailyUsageObservationInput,
   ParsedCcusageDaily,
+  SessionUsageObservationInput,
 } from "./types";
 
 type JsonObject = Record<string, unknown>;
@@ -84,6 +89,31 @@ function normalizedAgent(value: unknown) {
 
 function normalizedModel(value: unknown) {
   return normalizedIdentity(value, 256);
+}
+
+function normalizedModels(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map(normalizedModel)
+        .filter((item): item is string => Boolean(item)),
+    ),
+  ].sort();
+}
+
+function normalizedTimestamp(value: unknown, context: string) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") {
+    throw new Error("Invalid activity timestamp for " + context + ".");
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Invalid activity timestamp for " + context + ".");
+  }
+
+  return parsed.toISOString();
 }
 
 function normalizedDate(row: JsonObject) {
@@ -220,6 +250,90 @@ function modelObservationFrom(
   };
 }
 
+function sessionRowsFrom(root: JsonObject) {
+  if (Array.isArray(root.session)) return asObjects(root.session);
+  if (Array.isArray(root.sessions)) return asObjects(root.sessions);
+
+  const sessionReport = asObject(root.sessionReport);
+  if (sessionReport && Array.isArray(sessionReport.sessions)) {
+    return asObjects(sessionReport.sessions);
+  }
+
+  return [];
+}
+
+function sessionObservationFrom(row: JsonObject): SessionUsageObservationInput {
+  const agent = normalizedAgent(row.agent ?? asObject(row.metadata)?.agent);
+  if (!agent) {
+    throw new Error("A session row is missing a valid source agent.");
+  }
+
+  const sessionId = normalizedIdentity(
+    row.sessionId ?? row.session ?? row.period,
+    512,
+  );
+  if (!sessionId) {
+    throw new Error("A session row is missing a valid session identifier.");
+  }
+
+  const metadata = asObject(row.metadata);
+  const context = agent + " session " + sessionId;
+  const first_activity = normalizedTimestamp(
+    row.firstActivity ?? metadata?.firstActivity,
+    context,
+  );
+  const last_activity = normalizedTimestamp(
+    row.lastActivity ?? metadata?.lastActivity,
+    context,
+  );
+  const projectPathValue = row.projectPath ?? metadata?.projectPath;
+  const project_path =
+    typeof projectPathValue === "string" &&
+    projectPathValue.length <= 4096 &&
+    !/[\u0000-\u001f\u007f]/.test(projectPathValue)
+      ? projectPathValue
+      : null;
+
+  const input_tokens = requiredToken(row, "inputTokens", context);
+  const output_tokens = requiredToken(row, "outputTokens", context);
+  const cache_read_tokens = requiredToken(row, "cacheReadTokens", context);
+  const cache_creation_tokens = requiredToken(
+    row,
+    "cacheCreationTokens",
+    context,
+  );
+  const componentTotal =
+    input_tokens +
+    output_tokens +
+    cache_read_tokens +
+    cache_creation_tokens;
+  const reported_total_tokens =
+    optionalToken(row, "totalTokens", context) ?? componentTotal;
+  const reported_cost_usd = optionalCost(row, context);
+  const accounting_delta_tokens = reported_total_tokens - componentTotal;
+  const models = normalizedModels(row.modelsUsed ?? row.models);
+
+  const withoutHashes = {
+    agent,
+    session_id: sessionId,
+    first_activity,
+    last_activity,
+    input_tokens,
+    output_tokens,
+    cache_read_tokens,
+    cache_creation_tokens,
+    reported_total_tokens,
+    accounting_delta_tokens,
+    reported_cost_usd,
+    models,
+  };
+
+  return {
+    ...withoutHashes,
+    ...sessionHashes({ ...withoutHashes, project_path }),
+  };
+}
+
 function topLevelDaily(payload: JsonObject) {
   if (Array.isArray(payload.daily)) {
     return {
@@ -251,6 +365,10 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
   const modelObservations = new Map<
     string,
     DailyModelUsageObservationInput
+  >();
+  const sessionObservations = new Map<
+    string,
+    SessionUsageObservationInput
   >();
   const warnings: string[] = [];
   const dates: string[] = [];
@@ -414,6 +532,21 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
     }
   }
 
+  for (const sessionRow of sessionRowsFrom(root)) {
+    const observation = sessionObservationFrom(sessionRow);
+    const previous = sessionObservations.get(observation.local_key_hash);
+    if (previous && previous.session_hash !== observation.session_hash) {
+      throw new Error(
+        "Conflicting session rows for " +
+          observation.agent +
+          "/" +
+          observation.session_id +
+          " in one file.",
+      );
+    }
+    sessionObservations.set(observation.local_key_hash, observation);
+  }
+
   const parsedRows = [...observations.values()].sort((a, b) => {
     const byDate = a.usage_date.localeCompare(b.usage_date);
     return byDate || a.agent.localeCompare(b.agent);
@@ -423,9 +556,22 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
     const byAgent = a.agent.localeCompare(b.agent);
     return byDate || byAgent || a.model.localeCompare(b.model);
   });
+  const parsedSessionRows = [...sessionObservations.values()].sort((a, b) => {
+    const byAgent = a.agent.localeCompare(b.agent);
+    const byActivity = (a.last_activity ?? "").localeCompare(
+      b.last_activity ?? "",
+    );
+    return byAgent || byActivity || a.session_id.localeCompare(b.session_id);
+  });
 
   if (parsedRows.length === 0) {
     throw new Error("No agent usage rows were found in this export.");
+  }
+
+  if (parsedSessionRows.length === 0) {
+    warnings.push(
+      "No session section found. Cross-machine session dedupe evidence is unavailable for this import.",
+    );
   }
 
   dates.sort();
@@ -476,6 +622,7 @@ export function parseCcusageDaily(payload: unknown): ParsedCcusageDaily {
   return {
     rows: parsedRows,
     modelRows: parsedModelRows,
+    sessionRows: parsedSessionRows,
     scopeStart: dates[0],
     scopeEnd: dates[dates.length - 1],
     agents: [...new Set(parsedRows.map((row) => row.agent))].sort(),
