@@ -176,8 +176,10 @@ export function analyzeCrossMachineDuplicates({
   for (const incoming of incomingDaily) {
     if (incoming.is_tombstone) continue;
 
-    const exactCandidates = existingDaily.filter((existing) =>
-      exactDailyUsageMatch(incoming, existing),
+    const exactCandidates = existingDaily.filter(
+      (existing) =>
+        Boolean(existing.id) &&
+        exactDailyUsageMatch(incoming, existing),
     );
     if (exactCandidates.length === 0) continue;
 
@@ -242,7 +244,7 @@ export function analyzeCrossMachineDuplicates({
     links.push({
       agent: incoming.agent,
       usage_date: incoming.usage_date,
-      canonical_observation_id: chosen.id,
+      canonical_observation_id: chosen.id!,
       canonical_machine_id: chosen.machine_id,
       reason,
       matched_session_count:
