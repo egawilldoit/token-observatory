@@ -91,6 +91,19 @@ function normalizedModel(value: unknown) {
   return normalizedIdentity(value, 256);
 }
 
+function normalizedOpaqueId(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    normalized.length > maxLength ||
+    /[\u0000-\u001f\u007f]/.test(normalized)
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
 function normalizedModels(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [
@@ -268,7 +281,7 @@ function sessionObservationFrom(row: JsonObject): SessionUsageObservationInput {
     throw new Error("A session row is missing a valid source agent.");
   }
 
-  const sessionId = normalizedIdentity(
+  const sessionId = normalizedOpaqueId(
     row.sessionId ?? row.session ?? row.period,
     512,
   );
