@@ -66,7 +66,7 @@ export type ParsedCcusageDaily = {
 };
 
 export type CurrentDailyUsageRow = DailyUsageObservationInput & {
-  id: string;
+  id?: string;
   machine_id: string;
   import_id?: string;
   global_duplicate?: boolean;
