@@ -294,10 +294,22 @@ security definer
 set search_path = public
 as $$
 declare
+  v_machine_id text;
   v_result jsonb;
   v_session_result jsonb;
   v_dedupe_inserted integer := 0;
 begin
+  select machine_id
+    into v_machine_id
+  from public.imports
+  where id = p_import_id
+    and status = 'processing'
+  for update;
+
+  if v_machine_id is null then
+    raise exception 'Import % is not in processing state', p_import_id;
+  end if;
+
   select public.process_ccusage_import_v2(
     p_import_id,
     p_rows,
@@ -337,11 +349,10 @@ begin
     session_overlap_ratio numeric,
     evidence jsonb
   )
-  join public.daily_usage_observations d
-    on d.import_id = p_import_id
+  join public.v_current_daily_usage d
+    on d.machine_id = v_machine_id
    and d.agent = x.agent
    and d.usage_date = x.usage_date
-   and not d.is_tombstone
   join public.daily_usage_observations canonical
     on canonical.id = x.canonical_observation_id
    and canonical.machine_id = x.canonical_machine_id
