@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
+import { analyzeCrossMachineDuplicates } from "../lib/ccusage/cross-machine-dedupe";
 import {
   diffDailyModelUsage,
   diffDailyUsage,
@@ -18,6 +19,7 @@ import type {
   CurrentDailyUsageRow,
   DailyModelUsageObservationInput,
   DailyUsageObservationInput,
+  StoredSessionEvidenceRow,
 } from "../lib/ccusage/types";
 
 function fixture(total = 300) {
@@ -138,6 +140,10 @@ test("builds a three-calendar-day overlap command", () => {
   assert.equal(nextSinceFromDate("2026-08-28"), "2026-08-26");
   assert.match(buildCcusageCommand("2026-08-26"), /--since 20260826/);
   assert.match(buildCcusageCommand("2026-08-26"), /ccusage@20\.0\.20/);
+  assert.match(
+    buildCcusageCommand("2026-08-26"),
+    /--sections daily,session/,
+  );
 });
 
 
@@ -356,5 +362,195 @@ test("model migration is forward-only and exposes canonical model state", async 
   assert.match(
     migration,
     /grant select on table public\.v_current_daily_model_usage to service_role/,
+  );
+});
+
+
+function sessionFixture() {
+  return {
+    ...fixture(),
+    session: [
+      {
+        period: "Session-A",
+        agent: "codex",
+        inputTokens: 40,
+        outputTokens: 10,
+        cacheReadTokens: 50,
+        cacheCreationTokens: 0,
+        totalTokens: 100,
+        totalCost: 1.25,
+        modelsUsed: ["gpt-5.6-sol"],
+        metadata: {
+          lastActivity: "2026-08-28T12:00:00.000Z",
+          projectPath: "/workspace/a",
+        },
+      },
+      {
+        period: "Session-B",
+        agent: "codex",
+        inputTokens: 20,
+        outputTokens: 5,
+        cacheReadTokens: 25,
+        cacheCreationTokens: 0,
+        totalTokens: 50,
+        totalCost: 0.5,
+        modelsUsed: ["gpt-5.6-sol"],
+        metadata: {
+          lastActivity: "2026-08-28T14:00:00.000Z",
+          projectPath: "/workspace/b",
+        },
+      },
+    ],
+  };
+}
+
+test("parses unified session evidence without exposing project paths", () => {
+  const parsed = parseCcusageDaily(sessionFixture());
+
+  assert.equal(parsed.sessionRows.length, 2);
+  assert.equal(parsed.sessionRows[0].agent, "codex");
+  assert.equal(parsed.sessionRows[0].session_id, "Session-A");
+  assert.equal(
+    parsed.sessionRows[0].last_activity,
+    "2026-08-28T12:00:00.000Z",
+  );
+  assert.equal(parsed.sessionRows[0].identity_hash.length, 64);
+  assert.equal(parsed.sessionRows[0].mirror_hash.length, 64);
+  assert.equal(parsed.sessionRows[0].session_hash.length, 64);
+  assert.ok(
+    !JSON.stringify(parsed.sessionRows[0]).includes("/workspace/a"),
+  );
+});
+
+test("session mirror fingerprints ignore pricing and local project path", () => {
+  const left = sessionFixture();
+  const right = structuredClone(left);
+  right.session[0].totalCost = 99;
+  right.session[0].metadata.projectPath = "C:\\different\\workspace";
+
+  const leftSession = parseCcusageDaily(left).sessionRows[0];
+  const rightSession = parseCcusageDaily(right).sessionRows[0];
+
+  assert.equal(leftSession.identity_hash, rightSession.identity_hash);
+  assert.equal(leftSession.mirror_hash, rightSession.mirror_hash);
+  assert.notEqual(leftSession.local_key_hash, rightSession.local_key_hash);
+  assert.notEqual(leftSession.session_hash, rightSession.session_hash);
+});
+
+test("strong session evidence suppresses only an exact mirrored daily row", () => {
+  const parsed = parseCcusageDaily(sessionFixture());
+  const codexDaily = parsed.rows.find((row) => row.agent === "codex")!;
+  const existingDaily: CurrentDailyUsageRow[] = [
+    {
+      ...codexDaily,
+      id: "00000000-0000-0000-0000-000000000001",
+      machine_id: "machine-a",
+      global_duplicate: false,
+    },
+  ];
+  const existingSessions: StoredSessionEvidenceRow[] =
+    parsed.sessionRows.map((row, index) => ({
+      ...row,
+      id: "00000000-0000-0000-0000-00000000000" + (index + 2),
+      import_id: "00000000-0000-0000-0000-000000000010",
+      machine_id: "machine-a",
+    }));
+
+  const analysis = analyzeCrossMachineDuplicates({
+    incomingDaily: [codexDaily],
+    incomingSessions: parsed.sessionRows,
+    existingDaily,
+    existingSessions,
+  });
+
+  assert.equal(analysis.links.length, 1);
+  assert.equal(
+    analysis.links[0].reason,
+    "exact_daily_with_session_evidence",
+  );
+  assert.equal(analysis.duplicateTokensPrevented, 100);
+  assert.equal(analysis.evidence[0].exactSessionMatches, 2);
+  assert.equal(analysis.evidence[0].exactOverlapRatio, 1);
+});
+
+test("partial session identity overlap warns but never subtracts tokens", () => {
+  const incoming = parseCcusageDaily(sessionFixture());
+  const changedPayload = sessionFixture();
+  changedPayload.session[0].inputTokens += 1;
+  changedPayload.session[0].totalTokens += 1;
+  const existingParsed = parseCcusageDaily(changedPayload);
+  const codexDaily = incoming.rows.find((row) => row.agent === "codex")!;
+  const existingDaily: CurrentDailyUsageRow[] = [
+    {
+      ...codexDaily,
+      id: "00000000-0000-0000-0000-000000000011",
+      machine_id: "machine-a",
+      global_duplicate: false,
+    },
+  ];
+  const existingSessions: StoredSessionEvidenceRow[] = [
+    {
+      ...existingParsed.sessionRows[0],
+      id: "00000000-0000-0000-0000-000000000012",
+      import_id: "00000000-0000-0000-0000-000000000013",
+      machine_id: "machine-a",
+    },
+  ];
+
+  const analysis = analyzeCrossMachineDuplicates({
+    incomingDaily: [codexDaily],
+    incomingSessions: [incoming.sessionRows[0]],
+    existingDaily,
+    existingSessions,
+  });
+
+  assert.equal(analysis.links.length, 0);
+  assert.equal(analysis.identityMatches, 1);
+  assert.equal(analysis.partialMirrorRisk, true);
+});
+
+test("an exact raw snapshot can suppress an exact cross-machine daily row without sessions", () => {
+  const parsed = parseCcusageDaily(fixture());
+  const codexDaily = parsed.rows.find((row) => row.agent === "codex")!;
+  const existingDaily: CurrentDailyUsageRow[] = [
+    {
+      ...codexDaily,
+      id: "00000000-0000-0000-0000-000000000021",
+      machine_id: "machine-a",
+      global_duplicate: false,
+    },
+  ];
+
+  const analysis = analyzeCrossMachineDuplicates({
+    incomingDaily: [codexDaily],
+    incomingSessions: [],
+    existingDaily,
+    existingSessions: [],
+    rawDuplicateMachineId: "machine-a",
+  });
+
+  assert.equal(analysis.links.length, 1);
+  assert.equal(analysis.links[0].reason, "exact_raw_snapshot");
+  assert.equal(analysis.duplicateTokensPrevented, 100);
+});
+
+test("cross-machine migration preserves per-machine truth and adds dedupe-aware views", async () => {
+  const migration = await readFile(
+    new URL(
+      "../supabase/migrations/20260830_004_cross_machine_session_dedupe.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  assert.match(migration, /session_usage_observations/);
+  assert.match(migration, /cross_machine_daily_dedupe/);
+  assert.match(migration, /v_current_daily_usage_dedupe/);
+  assert.match(migration, /v_current_daily_model_usage_dedupe/);
+  assert.match(migration, /backfill_ccusage_sessions/);
+  assert.match(migration, /process_ccusage_import_v3/);
+  assert.match(
+    migration,
+    /reason in \(\s*'exact_raw_snapshot',\s*'exact_daily_with_session_evidence'/,
   );
 });
