@@ -27,6 +27,8 @@ import {
   OPENCODE_GO_MAX_FILE_BYTES,
   preflightXlsxBuffer,
 } from "../lib/opencode-go/xlsx-security.js";
+import { FIXTURE_TITLE } from "../lib/opencode-go/fixtures.js";
+import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -345,5 +347,73 @@ describe("opencode-go XLSX security preflight", () => {
   it("rejects a valid ZIP missing OOXML structure", () => {
     const zip = buildMinimalZip([{ name: "hello.txt", data: "hi" }]);
     assert.throws(() => preflightXlsxBuffer(zip, "tracker.xlsx"), /unsupported_structure/);
+  });
+});
+
+describe("opencode-go workbook parser", () => {
+  it("parses the reference workbook contract", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({}));
+    assert.equal(parsed.baselineUsage, 0.048);
+    assert.equal(parsed.checkTime, "12:00");
+    assert.equal(parsed.hardLimit, 1.0);
+    assert.equal(parsed.safetyReserve, 0);
+    assert.equal(parsed.checkpoints.length, 29);
+    assert.equal(parsed.checkpoints[0]?.date, "2026-08-31");
+    assert.equal(parsed.checkpoints[0]?.day, 1);
+    assert.equal(parsed.checkpoints[28]?.date, "2026-09-28");
+    assert.ok(parsed.checkpoints.every((c) => c.actual === null));
+  });
+
+  it("distinguishes blank (null) from explicit zero", () => {
+    const parsed = parseOpenCodeGoWorkbook(
+      buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-08-31": 0 } }),
+    );
+    assert.equal(parsed.checkpoints[0]?.actual, 0);
+    assert.equal(parsed.checkpoints[1]?.actual, null);
+  });
+
+  it("rejects a missing required sheet", () => {
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ omitSheet: true })),
+      /missing_sheet/,
+    );
+  });
+
+  it("rejects an incorrect title", () => {
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ title: "Wrong Title" })),
+      /title/,
+    );
+  });
+
+  it("rejects a dropped checkpoint as a schedule mismatch", () => {
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] })),
+      /schedule/,
+    );
+  });
+
+  it("rejects duplicate checkpoints", () => {
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ duplicateDate: "2026-09-05" })),
+      /duplicate/,
+    );
+  });
+
+  it("rejects a decreasing actual sequence", () => {
+    assert.throws(
+      () =>
+        parseOpenCodeGoWorkbook(
+          buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-09-03": 0.19, "2026-09-04": 0.175 } }),
+        ),
+      /monotonic/,
+    );
+  });
+
+  it("rejects negative actuals", () => {
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-09-03": -0.01 } })),
+      /actual/,
+    );
   });
 });
