@@ -31,6 +31,12 @@ import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 import { reconcileFormulas } from "../lib/opencode-go/formula.js";
 import { readFile, readdir } from "node:fs/promises";
 import { OPENCODE_GO_BUCKET } from "../lib/opencode-go/config.js";
+import {
+  isSameCycle,
+  selectActiveSnapshot,
+  validateCorrection,
+  validateSameCyclePlan,
+} from "../lib/opencode-go/import-semantics.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -501,5 +507,90 @@ describe("opencode-go query layer", () => {
     assert.match(source, /order\("created_at", \{ ascending: false \}\)/);
     assert.match(source, /import "server-only"/);
     assert.doesNotMatch(source, /daily_usage_observations|cross_machine|recovered_/);
+  });
+});
+
+describe("opencode-go import semantics", () => {
+  const CYCLE_A = { trackingStartMs: 1000, resetAtMs: 2000 };
+  const CYCLE_B = { trackingStartMs: 3000, resetAtMs: 4000 };
+  const PLAN = {
+    baselineUsage: 0.048,
+    hardLimit: 1.0,
+    safetyReserve: 0,
+    plannedCeiling: 1.0,
+    checkTime: "12:00",
+    schedule: ["2026-08-31", "2026-09-01"],
+  };
+
+  it("recognizes the same cycle by tracking start and reset", () => {
+    assert.equal(isSameCycle(CYCLE_A, { trackingStartMs: 1000, resetAtMs: 2000 }), true);
+    assert.equal(isSameCycle(CYCLE_A, CYCLE_B), false);
+  });
+
+  it("rejects same-cycle plan drift", () => {
+    assert.throws(
+      () => validateSameCyclePlan(PLAN, { ...PLAN, baselineUsage: 0.05 }),
+      /plan_drift/,
+    );
+    assert.throws(
+      () => validateSameCyclePlan(PLAN, { ...PLAN, checkTime: "13:00" }),
+      /plan_drift/,
+    );
+    validateSameCyclePlan(PLAN, { ...PLAN });
+  });
+
+  it("accepts filling a blank actual", () => {
+    validateCorrection(
+      [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: null }],
+      [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.18 }],
+    );
+  });
+
+  it("accepts upward and downward corrections that stay monotonic", () => {
+    validateCorrection(
+      [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.2 }],
+      [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.18 }],
+    );
+    validateCorrection(
+      [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.18 }],
+      [{ date: "2026-09-03", actual: 0.16 }, { date: "2026-09-04", actual: 0.2 }],
+    );
+  });
+
+  it("rejects corrections that break monotonicity", () => {
+    assert.throws(
+      () =>
+        validateCorrection(
+          [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.18 }],
+          [{ date: "2026-09-03", actual: 0.19 }, { date: "2026-09-04", actual: 0.175 }],
+        ),
+      /monotonic/,
+    );
+  });
+
+  it("rejects non-null to null regression with 409 semantics", () => {
+    assert.throws(
+      () =>
+        validateCorrection(
+          [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: 0.18 }],
+          [{ date: "2026-09-03", actual: 0.15 }, { date: "2026-09-04", actual: null }],
+        ),
+      /null_regression/,
+    );
+  });
+
+  it("orders the active snapshot by cycle then server-created time", () => {
+    const rows = [
+      { id: "old-cycle-new-upload", status: "processed", tracking_start: "2026-08-30T21:29:00.000Z", created_at: "2026-09-06T10:00:00.000Z" },
+      { id: "new-cycle", status: "processed", tracking_start: "2026-09-30T10:29:00.000Z", created_at: "2026-09-01T10:00:00.000Z" },
+      { id: "same-cycle-older", status: "processed", tracking_start: "2026-09-30T10:29:00.000Z", created_at: "2026-09-01T09:00:00.000Z" },
+      { id: "failed-newer", status: "failed", tracking_start: "2026-10-30T10:29:00.000Z", created_at: "2026-09-07T10:00:00.000Z" },
+    ];
+    assert.equal(selectActiveSnapshot(rows)?.id, "new-cycle");
+    assert.equal(
+      selectActiveSnapshot(rows.filter((r) => r.id !== "new-cycle"))?.id,
+      "same-cycle-older",
+    );
+    assert.equal(selectActiveSnapshot([]), null);
   });
 });
