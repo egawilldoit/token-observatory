@@ -30,6 +30,7 @@ import {
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 import { reconcileFormulas } from "../lib/opencode-go/formula.js";
 import { readFile, readdir } from "node:fs/promises";
+import { OPENCODE_GO_BUCKET } from "../lib/opencode-go/config.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -481,5 +482,24 @@ describe("opencode-go persistence migration", () => {
     assert.ok(files.includes("20260905_006_recovered_monthly_usage.sql"));
     assert.ok(files.includes("20260905_007_recovered_additive_accounting.sql"));
     assert.ok(files.includes("20260905_008_opencode_go_tracker.sql"));
+  });
+});
+
+describe("opencode-go query layer", () => {
+  it("uses the private opencode-go bucket", () => {
+    assert.equal(OPENCODE_GO_BUCKET, "opencode-go-imports");
+  });
+
+  it("queries processed snapshots with active-cycle ordering", async () => {
+    const source = await readFile(
+      new URL("../lib/opencode-go/queries.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /opencode_go_imports/);
+    assert.match(source, /eq\("status", "processed"\)/);
+    assert.match(source, /order\("tracking_start", \{ ascending: false \}\)/);
+    assert.match(source, /order\("created_at", \{ ascending: false \}\)/);
+    assert.match(source, /import "server-only"/);
+    assert.doesNotMatch(source, /daily_usage_observations|cross_machine|recovered_/);
   });
 });
