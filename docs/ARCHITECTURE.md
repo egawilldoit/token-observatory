@@ -177,3 +177,31 @@ The raw project path itself is not persisted in session evidence.
 `POST /api/sessions/backfill` re-parses already-preserved raw imports for one
 machine and idempotently calls `backfill_ccusage_sessions`. It changes evidence
 coverage only, never canonical daily or model totals.
+
+## Recovered monthly evidence
+
+The original Windows machines behind the recovered May–August 2026 terminal
+reports are permanently lost. Their exact surviving artifact is
+`ccusage@20.0.20 monthly` output, so monthly-by-agent is the highest available
+granularity. The system intentionally does not invent dates, sessions, or
+per-model token attribution from that output.
+
+Recovery is a separate evidence domain:
+
+- `recovered_usage_sets` stores the raw terminal reports, source metadata, and
+  reconciled four-month totals.
+- `recovered_monthly_usage` stores the 13 normalized month/agent rows and
+  model-name lists only.
+- The two identical machine reports are represented as one set with
+  `source_machine_count = 2`, `suspected_mirror = true`, and
+  `accounting_mode = evidence_only_non_additive`.
+- The recovered 9,666,290,902 tokens are evidence only. They are not included
+  in canonical daily/model/session/import views, cross-machine dedupe, or any
+  canonical total, because historical overlap is unknown.
+- Reported cost ($1,386.19) remains informational and incomplete: ccusage
+  warned that `laguna-s-2.1-free` and `ox-alpha-free` had no pricing.
+
+The dashboard labels this archive as **Recovered History** and keeps it
+visually separate from canonical telemetry. The server-only recovery query
+layer reads the protected tables with the same service-role boundary as the
+canonical telemetry queries.
