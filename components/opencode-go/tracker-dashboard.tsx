@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import { formatPercent, formatPoints, type TrackerViewModel } from "@/lib/opencode-go/view-model";
+import { CheckpointTable } from "./checkpoint-table";
+import { PaceChart } from "./pace-chart";
 import { TrackerStatus } from "./tracker-status";
 
 function formatCasablanca(instantIso: string): string {
@@ -166,6 +168,22 @@ export function TrackerDashboard({
       </div>
 
       {children}
+      <section
+        aria-label="Planned versus recorded"
+        className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.025)]"
+      >
+        <h2 className="font-semibold text-slate-950">Planned versus recorded</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Blue is the planned ceiling; green is recorded usage. The checkpoint
+          table below carries the same data.
+        </p>
+        <PaceChart checkpoints={view.checkpoints} />
+      </section>
+      <CheckpointTable
+        checkpoints={view.checkpoints}
+        requiredDate={view.requiredDate}
+        updateDue={view.status === "UPDATE_DUE"}
+      />
       {history}
     </>
   );
