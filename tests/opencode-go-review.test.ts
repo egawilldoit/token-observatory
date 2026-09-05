@@ -92,6 +92,21 @@ describe("OpenCode Go review hardening", () => {
     assert.match(route, /Another workbook for this cycle is already processing/);
   });
 
+  it("pins the immutability trigger function search path", async () => {
+    const migration = await readFile(
+      new URL(
+        "../supabase/migrations/20260905_012_opencode_go_trigger_search_path.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    assert.match(
+      migration,
+      /alter\s+function\s+public\.reject_opencode_go_processed_mutation\(\)/i,
+    );
+    assert.match(migration, /set\s+search_path\s*=\s*pg_catalog/i);
+  });
+
   it("renders UPDATE_DUE copy from the configured checkpoint time", async () => {
     const statusSource = await readFile(
       new URL("../components/opencode-go/tracker-status.tsx", import.meta.url),
