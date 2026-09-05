@@ -13,8 +13,8 @@ import {
 import { OpenCodeGoParseError, parseOpenCodeGoWorkbook } from "@/lib/opencode-go/parser";
 import { buildStoredSnapshot } from "@/lib/opencode-go/snapshot";
 import {
-  OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES,
-  OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES as OPENCODE_GO_MAX_FILE_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES as OPENCODE_GO_MAX_REQUEST_BYTES,
   XlsxPreflightError,
   preflightXlsxBuffer,
 } from "@/lib/opencode-go/xlsx-security";
@@ -23,6 +23,8 @@ import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 
 // Node.js route runtime (Next.js default). Workbook parsing uses node:zlib
 // and Buffer, so this route must never move to the edge runtime.
+// The aliases above intentionally preserve the route contract names while
+// enforcing the lower Vercel-safe effective upload budgets.
 
 function safeFilename(name: string) {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);
@@ -76,7 +78,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (requestExceedsBytes(request, OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES)) {
+  if (requestExceedsBytes(request, OPENCODE_GO_MAX_REQUEST_BYTES)) {
     return NextResponse.json({ error: "Import request is too large." }, { status: 413 });
   }
 
@@ -97,7 +99,7 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   }
-  if (file.size <= 0 || file.size > OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES) {
+  if (file.size <= 0 || file.size > OPENCODE_GO_MAX_FILE_BYTES) {
     return NextResponse.json(
       { error: "XLSX file must be between 1 byte and 4 MiB." },
       { status: 413 },
