@@ -15,6 +15,14 @@ import {
   parseCasablancaDateTime,
 } from "../lib/opencode-go/time.js";
 import { evaluateTrackerStatus } from "../lib/opencode-go/status.js";
+import {
+  buildEncryptedSignalZip,
+  buildMinimalZip,
+  buildOpenCodeGoWorkbookBuffer,
+  buildOversizedEntryZip,
+  buildTraversalZip,
+  buildVbaZip,
+} from "../lib/opencode-go/fixtures.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -259,5 +267,32 @@ describe("opencode-go freshness and status", () => {
     assert.equal(result.status, "ON_TRACK");
     assert.equal(result.preFirstCheckpoint, true);
     assert.equal(result.headroom, null);
+  });
+});
+
+describe("opencode-go deterministic fixtures", () => {
+  it("generates a valid reference workbook deterministically", () => {
+    const a = buildOpenCodeGoWorkbookBuffer({});
+    const b = buildOpenCodeGoWorkbookBuffer({});
+    assert.ok(a.length > 1024, "workbook should be non-trivial");
+    assert.equal(a.length, b.length);
+    assert.equal(Buffer.compare(a, b), 0);
+    assert.ok(a.subarray(0, 2).toString() === "PK", "must be a ZIP container");
+  });
+
+  it("builds explicit-zero, missing-checkpoint, and duplicate variants", () => {
+    const zero = buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-08-31": 0 } });
+    const missing = buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] });
+    const dup = buildOpenCodeGoWorkbookBuffer({ duplicateDate: "2026-09-05" });
+    assert.ok(zero.length > 0 && missing.length > 0 && dup.length > 0);
+    assert.notEqual(missing.length, buildOpenCodeGoWorkbookBuffer({}).length);
+  });
+
+  it("builds traversal, VBA, encryption, and oversized security fixtures", () => {
+    assert.ok(buildTraversalZip().length > 0);
+    assert.ok(buildVbaZip().length > 0);
+    assert.ok(buildEncryptedSignalZip().length > 0);
+    assert.ok(buildOversizedEntryZip(300).length > 0);
+    assert.ok(buildMinimalZip([{ name: "a.txt", data: "hi" }]).length > 0);
   });
 });
