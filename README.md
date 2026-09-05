@@ -66,6 +66,7 @@ supabase/migrations/20260905_008_opencode_go_tracker.sql
 supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql
 supabase/migrations/20260905_010_opencode_go_upload_limit.sql
 supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql
+supabase/migrations/20260905_012_opencode_go_trigger_search_path.sql
 ```
 
 The migrations create:
@@ -93,6 +94,7 @@ The migrations create:
 - `opencode_go_imports` for immutable OpenCode Go tracker snapshots
 - private Storage bucket `opencode-go-imports` for raw OpenCode Go workbooks
 - a one-processing-import-per-cycle guard so same-cycle history validation cannot race
+- a fixed `pg_catalog` search path for the OpenCode Go immutability trigger function
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.
