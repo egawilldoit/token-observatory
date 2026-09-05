@@ -68,4 +68,27 @@ describe("OpenCode Go review hardening", () => {
     assert.match(migration, /file_size_limit\s*=\s*4\s*\*\s*1024\s*\*\s*1024/i);
     assert.match(migration, /where\s+id\s*=\s*'opencode-go-imports'/i);
   });
+
+  it("serializes same-cycle imports before reading accepted history", async () => {
+    const migration = await readFile(
+      new URL(
+        "../supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    assert.match(migration, /create\s+unique\s+index/i);
+    assert.match(migration, /tracking_start\s*,\s*reset_at/i);
+    assert.match(migration, /where\s+status\s*=\s*'processing'/i);
+
+    const route = await readFile(
+      new URL("../app/api/opencode-go/import/route.ts", import.meta.url),
+      "utf8",
+    );
+    const claim = route.indexOf('status: "processing"');
+    const historyRead = route.indexOf('.eq("status", "processed")', claim);
+    assert.ok(claim >= 0, "route must claim a processing row");
+    assert.ok(historyRead > claim, "same-cycle history must be read only after the processing claim");
+    assert.match(route, /Another workbook for this cycle is already processing/);
+  });
 });
