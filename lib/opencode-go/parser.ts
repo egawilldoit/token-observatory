@@ -73,6 +73,9 @@ const REQUIRED_HEADERS = [
   "Headroom",
 ] as const;
 
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+const MINUTES_PER_DAY = 24 * 60;
+
 function fail(code: ParseCode, message: string): never {
   throw new OpenCodeGoParseError(code, message);
 }
@@ -121,17 +124,61 @@ function assertSupportedDate(ms: number, field: string): void {
   }
 }
 
+function wallClockToInstant(date: string, time: string, field: string): number {
+  try {
+    const ms = casablancaWallToInstant(date, time);
+    assertSupportedDate(ms, field);
+    return ms;
+  } catch (error) {
+    if (error instanceof OpenCodeGoParseError) throw error;
+    return fail("invalid_datetime", `${field} is an invalid date`);
+  }
+}
+
+function excelSerialToMs(raw: number, field: string): number {
+  if (!Number.isFinite(raw)) fail("invalid_datetime", `${field} is an invalid date`);
+
+  // Excel serial date-times carry wall-clock components, not a timezone. Do
+  // not treat the serial as a UTC instant. Split it into a calendar date and
+  // minute-of-day, then resolve that wall time in Africa/Casablanca.
+  const totalMinutes = Math.round(raw * MINUTES_PER_DAY);
+  const wholeDays = Math.floor(totalMinutes / MINUTES_PER_DAY);
+  const minuteOfDay = totalMinutes - wholeDays * MINUTES_PER_DAY;
+  const wallDate = new Date(EXCEL_EPOCH_UTC_MS + wholeDays * 86400000);
+  if (Number.isNaN(wallDate.getTime())) {
+    return fail("invalid_datetime", `${field} is an invalid date`);
+  }
+
+  const date = wallDate.toISOString().slice(0, 10);
+  const hour = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+  const time = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  return wallClockToInstant(date, time, field);
+}
+
+function excelDateObjectToMs(raw: Date, field: string): number {
+  if (Number.isNaN(raw.getTime())) {
+    return fail("invalid_datetime", `${field} is an invalid date`);
+  }
+
+  // A true XLSX date cell is also timezone-less. SheetJS represents it with a
+  // Date object, so preserve the represented wall components instead of using
+  // getTime() as an absolute instant.
+  const date = [
+    raw.getUTCFullYear(),
+    String(raw.getUTCMonth() + 1).padStart(2, "0"),
+    String(raw.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+  const time = `${String(raw.getUTCHours()).padStart(2, "0")}:${String(raw.getUTCMinutes()).padStart(2, "0")}`;
+  return wallClockToInstant(date, time, field);
+}
+
 function dateCellToMs(raw: unknown, field: string, fallbackCheckTime: string): number {
   if (raw instanceof Date) {
-    const ms = raw.getTime();
-    assertSupportedDate(ms, field);
-    return ms;
+    return excelDateObjectToMs(raw, field);
   }
   if (typeof raw === "number") {
-    if (!Number.isFinite(raw)) fail("invalid_datetime", `${field} is an invalid date`);
-    const ms = Math.round((raw - 25569) * 86400000);
-    assertSupportedDate(ms, field);
-    return ms;
+    return excelSerialToMs(raw, field);
   }
   if (typeof raw === "string") {
     const t = raw.trim();
@@ -162,10 +209,8 @@ function normalizeCheckTime(raw: unknown): string {
     return String(Math.floor(minutes / 60)).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0");
   }
   if (raw instanceof Date) {
-    const ms = raw.getTime();
-    const minutes = Math.floor(ms / 60000) % 1440;
-    const norm = ((minutes % 1440) + 1440) % 1440;
-    return String(Math.floor(norm / 60)).padStart(2, "0") + ":" + String(norm % 60).padStart(2, "0");
+    const minutes = raw.getUTCHours() * 60 + raw.getUTCMinutes();
+    return String(Math.floor(minutes / 60)).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0");
   }
   if (typeof raw === "string") {
     const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(raw.trim());
@@ -219,7 +264,10 @@ function findCell(grid: Grid, predicate: (v: string) => boolean): { r: number; c
 export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkbook {
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(buffer, { type: "buffer", cellDates: true, sheetStubs: false });
+    // Keep Excel date/time cells as their numeric serials. Excel serials are
+    // timezone-less wall-clock values; converting them to JS Date objects here
+    // loses that distinction and can shift Casablanca times by the UTC offset.
+    wb = XLSX.read(buffer, { type: "buffer", cellDates: false, sheetStubs: false });
   } catch {
     throw new OpenCodeGoParseError("missing_sheet", "malformed workbook: could not read sheets");
   }
@@ -327,11 +375,12 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
   const checkpoints = rawRows.map((row, i) => {
     const day = typeof row.day === "number" ? row.day : Number(String(row.day).trim());
     if (!Number.isInteger(day)) fail("schedule", `Day # row ${i + 1} is not an integer`);
-    const timestampMs = dateCellToMs(row.date, `checkpoint row ${i + 1} date`, checkTime);
-    const date = formatCasablancaDate(timestampMs);
     const rowCheckTime = row.check == null || (typeof row.check === "string" && row.check.trim() === "")
       ? checkTime
       : normalizeCheckTime(row.check);
+    const dateAnchorMs = dateCellToMs(row.date, `checkpoint row ${i + 1} date`, rowCheckTime);
+    const date = formatCasablancaDate(dateAnchorMs);
+    const timestampMs = wallClockToInstant(date, rowCheckTime, `checkpoint row ${i + 1} date`);
     const ceiling = row.ceiling == null || (typeof row.ceiling === "string" && row.ceiling.trim() === "")
       ? null
       : parseFraction(row.ceiling, `checkpoint row ${i + 1} ceiling`);

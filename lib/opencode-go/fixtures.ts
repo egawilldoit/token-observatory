@@ -48,10 +48,20 @@ function ceilingFor(date: string): number {
   });
 }
 
-function excelDateTime(local: string): Date {
-  const [d, t] = local.split(" ") as [string, string];
-  const ms = casablancaWallToInstant(d as string, t as string);
-  return new Date(ms);
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function excelDateTime(local: string): number {
+  const [date, time] = local.split(" ") as [string, string];
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const wallClockMs = Date.UTC(
+    year as number,
+    (month as number) - 1,
+    day as number,
+    hour as number,
+    minute as number,
+  );
+  return (wallClockMs - EXCEL_EPOCH_UTC_MS) / 86400000;
 }
 
 export function buildOpenCodeGoWorkbookBuffer(options: FixtureOptions = {}): Buffer {
@@ -105,6 +115,16 @@ export function buildOpenCodeGoWorkbookBuffer(options: FixtureOptions = {}): Buf
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Preserve Excel date semantics in the serialized fixture: numeric serial
+  // values plus number formats. With cellDates:true SheetJS may surface these
+  // as Date objects; with cellDates:false the parser receives the raw serials.
+  if (ws.B4) ws.B4.z = "yyyy-mm-dd hh:mm";
+  if (ws.B7) ws.B7.z = "yyyy-mm-dd hh:mm";
+  for (let row = 16; row < 16 + dates.length; row += 1) {
+    const cell = ws[`B${row}`];
+    if (cell) cell.z = "yyyy-mm-dd";
+  }
+
   const wb = XLSX.utils.book_new();
   wb.Props = {
     Title: FIXTURE_TITLE,
