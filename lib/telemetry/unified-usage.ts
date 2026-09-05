@@ -127,6 +127,15 @@ export type UnifiedUsageSelection =
 
 type AggregateKey = string;
 
+type RecoveredTotals = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  reportedCostUsd: number | null;
+};
+
 function monthFromDate(value: string) {
   return value.slice(0, 7);
 }
@@ -259,6 +268,79 @@ function monthlySort(a: UnifiedMonthlyUsage, b: UnifiedMonthlyUsage) {
   );
 }
 
+function sumRecoveredRows(rows: RecoveredMonthlyUsage[]): RecoveredTotals {
+  let reportedCostUsd: number | null = 0;
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.inputTokens += row.input_tokens;
+      acc.outputTokens += row.output_tokens;
+      acc.cacheCreationTokens += row.cache_creation_tokens;
+      acc.cacheReadTokens += row.cache_read_tokens;
+      acc.totalTokens += row.total_tokens;
+      if (reportedCostUsd !== null) {
+        reportedCostUsd =
+          row.reported_cost_usd === null
+            ? null
+            : reportedCostUsd + row.reported_cost_usd;
+      }
+      return acc;
+    },
+    {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalTokens: 0,
+    },
+  );
+
+  return {
+    ...totals,
+    reportedCostUsd:
+      reportedCostUsd === null ? null : Number(reportedCostUsd.toFixed(2)),
+  };
+}
+
+function recoveredRowMatchesTotals(
+  row: RecoveredMonthlyUsage,
+  totals: RecoveredTotals,
+) {
+  const costMatches =
+    row.reported_cost_usd === null
+      ? totals.reportedCostUsd === null
+      : totals.reportedCostUsd !== null &&
+        Math.abs(row.reported_cost_usd - totals.reportedCostUsd) < 0.005;
+
+  return (
+    row.input_tokens === totals.inputTokens &&
+    row.output_tokens === totals.outputTokens &&
+    row.cache_creation_tokens === totals.cacheCreationTokens &&
+    row.cache_read_tokens === totals.cacheReadTokens &&
+    row.total_tokens === totals.totalTokens &&
+    costMatches
+  );
+}
+
+function recoveredSetMatchesTotals(
+  set: RecoveredUsageSetSummary,
+  totals: RecoveredTotals,
+) {
+  const costMatches =
+    set.reported_cost_usd === null
+      ? totals.reportedCostUsd === null
+      : totals.reportedCostUsd !== null &&
+        Math.abs(set.reported_cost_usd - totals.reportedCostUsd) < 0.005;
+
+  return (
+    set.total_input_tokens === totals.inputTokens &&
+    set.total_output_tokens === totals.outputTokens &&
+    set.total_cache_creation_tokens === totals.cacheCreationTokens &&
+    set.total_cache_read_tokens === totals.cacheReadTokens &&
+    set.total_tokens === totals.totalTokens &&
+    costMatches
+  );
+}
+
 function recoveredProjectionRows(
   evidence: RecoveredUsageEvidence | null,
 ): UnifiedMonthlyUsage[] {
@@ -272,11 +354,42 @@ function recoveredProjectionRows(
     byMonth.set(month, rows);
   }
 
-  const projected: UnifiedMonthlyUsage[] = [];
+  const monthlyAllRows: RecoveredMonthlyUsage[] = [];
+  const selectedRows: Array<{
+    month: string;
+    rows: RecoveredMonthlyUsage[];
+  }> = [];
+
   for (const [month, rows] of byMonth) {
+    const allRows = rows.filter((row) => row.agent === "All");
+    if (allRows.length !== 1) {
+      throw new Error(
+        `Recovered usage integrity error: expected exactly one All row for ${month}`,
+      );
+    }
+
+    const allRow = allRows[0];
+    monthlyAllRows.push(allRow);
     const agentRows = rows.filter((row) => row.agent !== "All");
-    const rowsToUse = agentRows.length > 0 ? agentRows : rows;
-    for (const row of rowsToUse) {
+    const rowsToUse =
+      agentRows.length > 0 &&
+      recoveredRowMatchesTotals(allRow, sumRecoveredRows(agentRows))
+        ? agentRows
+        : [allRow];
+
+    selectedRows.push({ month, rows: rowsToUse });
+  }
+
+  const aggregateAllTotals = sumRecoveredRows(monthlyAllRows);
+  if (!recoveredSetMatchesTotals(evidence.set, aggregateAllTotals)) {
+    throw new Error(
+      "Recovered usage integrity error: monthly All rows do not reconcile with recovery-set totals",
+    );
+  }
+
+  const projected: UnifiedMonthlyUsage[] = [];
+  for (const { month, rows } of selectedRows) {
+    for (const row of rows) {
       const values = recoveredValues(
         row,
         evidence.set.pricing_complete && row.reported_cost_usd !== null,
