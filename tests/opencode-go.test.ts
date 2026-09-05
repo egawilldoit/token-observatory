@@ -594,3 +594,29 @@ describe("opencode-go import semantics", () => {
     assert.equal(selectActiveSnapshot([]), null);
   });
 });
+
+describe("opencode-go import API contract", () => {
+  it("enforces the required flow, error codes, and isolation", async () => {
+    const source = await readFile(
+      new URL("../app/api/opencode-go/import/route.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /runtime = "nodejs"/);
+    assert.match(source, /getObservatoryAccess/);
+    assert.match(source, /isCrossOriginRequest/);
+    assert.match(source, /OPENCODE_GO_MAX_REQUEST_BYTES/);
+    assert.match(source, /preflightXlsxBuffer/);
+    assert.match(source, /parseOpenCodeGoWorkbook/);
+    assert.match(source, /validateSameCyclePlan/);
+    assert.match(source, /validateCorrection/);
+    assert.match(source, /opencode_go_imports/);
+    assert.match(source, /OPENCODE_GO_BUCKET/);
+    assert.match(source, /exact_duplicate/);
+    assert.match(source, /cleanupAttempted/);
+    for (const code of ["401", "403", "409", "413", "422", "500", "503"]) {
+      assert.match(source, new RegExp(`status: ${code}`));
+    }
+    assert.doesNotMatch(source, /from\("imports"\)|daily_usage_observations|process_ccusage_import/);
+    assert.doesNotMatch(source, /lib\/ccusage/);
+  });
+});
