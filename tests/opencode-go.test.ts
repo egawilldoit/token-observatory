@@ -22,9 +22,15 @@ import {
   buildOversizedEntryZip,
   buildTraversalZip,
   buildVbaZip,
+  MINIMAL_CONTENT_TYPES,
+  MINIMAL_WORKBOOK,
 } from "../lib/opencode-go/fixtures.js";
 import {
   OPENCODE_GO_MAX_FILE_BYTES,
+  OPENCODE_GO_MAX_REQUEST_BYTES,
+  OPENCODE_GO_MAX_SINGLE_UNCOMPRESSED_BYTES,
+  OPENCODE_GO_MAX_TOTAL_UNCOMPRESSED_BYTES,
+  OPENCODE_GO_MAX_ZIP_ENTRIES,
   preflightXlsxBuffer,
 } from "../lib/opencode-go/xlsx-security.js";
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
@@ -80,6 +86,34 @@ describe("opencode-go reference checkpoint contract", () => {
       checkTime: "12:00",
     });
     checkpoints.forEach((c, i) => assert.equal(c.day, i + 1));
+  });
+
+  it("includes the first-day checkpoint when it falls after tracking start", () => {
+    const start = parseCasablancaDateTime("2026-08-31 10:00");
+    const reset = parseCasablancaDateTime("2026-09-02 11:00");
+    const checkpoints = generateCheckpoints({
+      trackingStartMs: start,
+      resetAtMs: reset,
+      checkTime: "12:00",
+    });
+    assert.deepEqual(
+      checkpoints.map((c) => c.date),
+      ["2026-08-31", "2026-09-01"],
+    );
+  });
+
+  it("includes the reset-day checkpoint when it falls before reset", () => {
+    const start = parseCasablancaDateTime("2026-08-31 10:00");
+    const reset = parseCasablancaDateTime("2026-09-02 13:00");
+    const checkpoints = generateCheckpoints({
+      trackingStartMs: start,
+      resetAtMs: reset,
+      checkTime: "12:00",
+    });
+    assert.deepEqual(
+      checkpoints.map((c) => c.date),
+      ["2026-08-31", "2026-09-01", "2026-09-02"],
+    );
   });
 });
 
@@ -358,6 +392,34 @@ describe("opencode-go XLSX security preflight", () => {
     const zip = buildMinimalZip([{ name: "hello.txt", data: "hi" }]);
     assert.throws(() => preflightXlsxBuffer(zip, "tracker.xlsx"), /unsupported_structure/);
   });
+
+  it("enforces the documented security budgets", () => {
+    assert.equal(OPENCODE_GO_MAX_FILE_BYTES, 8 * 1024 * 1024);
+    assert.equal(OPENCODE_GO_MAX_REQUEST_BYTES, 10 * 1024 * 1024);
+    assert.equal(OPENCODE_GO_MAX_ZIP_ENTRIES, 256);
+    assert.equal(OPENCODE_GO_MAX_SINGLE_UNCOMPRESSED_BYTES, 16 * 1024 * 1024);
+    assert.equal(OPENCODE_GO_MAX_TOTAL_UNCOMPRESSED_BYTES, 32 * 1024 * 1024);
+  });
+
+  it("rejects a single entry declaring excessive expansion", () => {
+    const zip = buildMinimalZip([
+      { name: "[Content_Types].xml", data: MINIMAL_CONTENT_TYPES },
+      { name: "xl/workbook.xml", data: MINIMAL_WORKBOOK },
+      { name: "xl/data.xml", data: "x" },
+    ]);
+    const patched = Buffer.from(zip);
+    const eocd = patched.length - 22;
+    const count = patched.readUInt16LE(eocd + 10);
+    let cursor = patched.readUInt32LE(eocd + 16);
+    for (let i = 0; i < count; i += 1) {
+      const nameLen = patched.readUInt16LE(cursor + 28);
+      const extraLen = patched.readUInt16LE(cursor + 30);
+      const commentLen = patched.readUInt16LE(cursor + 32);
+      if (i === count - 1) patched.writeUInt32LE(17 * 1024 * 1024, cursor + 24);
+      cursor += 46 + nameLen + extraLen + commentLen;
+    }
+    assert.throws(() => preflightXlsxBuffer(patched, "tracker.xlsx"), /entry_too_large/);
+  });
 });
 
 describe("opencode-go workbook parser", () => {
@@ -425,6 +487,24 @@ describe("opencode-go workbook parser", () => {
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-09-03": -0.01 } })),
       /actual/,
     );
+  });
+
+  it("rejects an inconsistent checkpoint time", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer" });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown }>;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr]?.v === "Daily check time") {
+        const col = addr.replace(/[0-9]/g, "");
+        const row = addr.replace(/[^0-9]/g, "");
+        const next = `${col === "A" ? "B" : col}${row}`;
+        if (ws[next]) ws[next] = { ...ws[next], v: "13:00" };
+        break;
+      }
+    }
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /schedule/);
   });
 });
 
@@ -680,5 +760,34 @@ describe("opencode-go dashboard view model", () => {
   it("shows LIMIT_EXCEEDED at 100% and RESET_REQUIRED after reset", () => {
     assert.equal(viewModel({ "2026-09-04": 1.0 }, "2026-09-05 14:29").status, "LIMIT_EXCEEDED");
     assert.equal(viewModel({}, "2026-09-29 11:29").status, "RESET_REQUIRED");
+  });
+});
+
+describe("opencode-go ccusage isolation", () => {
+  it("keeps the OpenCode Go domain free of ccusage/recovery imports", async () => {
+    const dir = new URL("../lib/opencode-go/", import.meta.url);
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".ts"));
+    assert.ok(files.length >= 10);
+    for (const file of files) {
+      const source = await readFile(new URL(`../lib/opencode-go/${file}`, import.meta.url), "utf8");
+      const code = source
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+        .join("\n");
+      assert.doesNotMatch(code, /lib\/ccusage/);
+      assert.doesNotMatch(code, /lib\/recovery/);
+      assert.doesNotMatch(code, /daily_usage_observations|process_ccusage_import|cross_machine_daily_dedupe|recovered_monthly_usage/);
+    }
+  });
+
+  it("keeps OpenCode Go UI and routes off ccusage telemetry", async () => {
+    for (const url of [
+      "../app/opencode-go/page.tsx",
+      "../components/opencode-go/tracker-dashboard.tsx",
+      "../components/opencode-go/checkpoint-table.tsx",
+    ]) {
+      const source = await readFile(new URL(url, import.meta.url), "utf8");
+      assert.doesNotMatch(source, /lib\/ccusage|lib\/telemetry|lib\/recovery/);
+    }
   });
 });
