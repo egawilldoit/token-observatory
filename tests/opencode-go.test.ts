@@ -23,6 +23,10 @@ import {
   buildTraversalZip,
   buildVbaZip,
 } from "../lib/opencode-go/fixtures.js";
+import {
+  OPENCODE_GO_MAX_FILE_BYTES,
+  preflightXlsxBuffer,
+} from "../lib/opencode-go/xlsx-security.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -294,5 +298,52 @@ describe("opencode-go deterministic fixtures", () => {
     assert.ok(buildEncryptedSignalZip().length > 0);
     assert.ok(buildOversizedEntryZip(300).length > 0);
     assert.ok(buildMinimalZip([{ name: "a.txt", data: "hi" }]).length > 0);
+  });
+});
+
+describe("opencode-go XLSX security preflight", () => {
+  it("accepts the valid reference workbook", () => {
+    const buf = buildOpenCodeGoWorkbookBuffer({});
+    const result = preflightXlsxBuffer(buf, "tracker.xlsx");
+    assert.equal(result.ok, true);
+  });
+
+  it("rejects a renamed non-ZIP file", () => {
+    assert.throws(
+      () => preflightXlsxBuffer(Buffer.from("this is not a zip", "utf8"), "tracker.xlsx"),
+      /not_zip/,
+    );
+  });
+
+  it("rejects malformed archives", () => {
+    const buf = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from("garbage")]);
+    assert.throws(() => preflightXlsxBuffer(buf, "tracker.xlsx"), /malformed/);
+  });
+
+  it("rejects path traversal entries", () => {
+    assert.throws(() => preflightXlsxBuffer(buildTraversalZip(), "tracker.xlsx"), /traversal/);
+  });
+
+  it("rejects macro/VBA content", () => {
+    assert.throws(() => preflightXlsxBuffer(buildVbaZip(), "tracker.xlsx"), /macro/);
+  });
+
+  it("rejects encrypted content", () => {
+    assert.throws(() => preflightXlsxBuffer(buildEncryptedSignalZip(), "tracker.xlsx"), /encrypted/);
+  });
+
+  it("rejects excessive entry counts", () => {
+    assert.throws(() => preflightXlsxBuffer(buildOversizedEntryZip(300), "tracker.xlsx"), /too_many_entries/);
+  });
+
+  it("rejects oversized files", () => {
+    const big = Buffer.alloc(OPENCODE_GO_MAX_FILE_BYTES + 1, 0);
+    big.writeUInt32LE(0x04034b50, 0);
+    assert.throws(() => preflightXlsxBuffer(big, "tracker.xlsx"), /too_large/);
+  });
+
+  it("rejects a valid ZIP missing OOXML structure", () => {
+    const zip = buildMinimalZip([{ name: "hello.txt", data: "hi" }]);
+    assert.throws(() => preflightXlsxBuffer(zip, "tracker.xlsx"), /unsupported_structure/);
   });
 });
