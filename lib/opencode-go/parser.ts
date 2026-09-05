@@ -92,21 +92,27 @@ function parseFraction(raw: unknown, field: string): number {
   return fail("invalid_plan", `${field} is malformed`);
 }
 
+function assertSupportedDate(ms: number, field: string): void {
+  if (!Number.isFinite(ms)) fail("invalid_datetime", `${field} is an invalid date`);
+  // Compare UTC calendar dates so every representation (Date, serial,
+  // date-only, datetime) shares one inclusive range, including all times on
+  // the boundary days. Host-timezone independent by construction.
+  const day = new Date(ms).toISOString().slice(0, 10);
+  if (day < "2020-01-01" || day > "2035-01-01") {
+    fail("invalid_datetime", `${field} date is out of range`);
+  }
+}
+
 function dateCellToMs(raw: unknown, field: string, fallbackCheckTime: string): number {
   if (raw instanceof Date) {
     const ms = raw.getTime();
-    if (!Number.isFinite(ms)) fail("invalid_datetime", `${field} is an invalid date`);
-    if (ms < Date.UTC(2020, 0, 1) || ms > Date.UTC(2035, 0, 1)) {
-      fail("invalid_datetime", `${field} date is out of range`);
-    }
+    assertSupportedDate(ms, field);
     return ms;
   }
   if (typeof raw === "number") {
     if (!Number.isFinite(raw)) fail("invalid_datetime", `${field} is an invalid date`);
     const ms = Math.round((raw - 25569) * 86400000);
-    if (ms < Date.UTC(2020, 0, 1) || ms > Date.UTC(2035, 0, 1)) {
-      fail("invalid_datetime", `${field} date is out of range`);
-    }
+    assertSupportedDate(ms, field);
     return ms;
   }
   if (typeof raw === "string") {

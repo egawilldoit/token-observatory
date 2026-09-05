@@ -517,6 +517,26 @@ describe("opencode-go workbook parser", () => {
     assert.throws(() => parseOpenCodeGoWorkbook(out), /out of range/);
   });
 
+  it("accepts boundary-day times anywhere on 2035-01-01", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: true });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr]?.v === "Tracking starts") {
+        const col = addr.replace(/[0-9]/g, "");
+        const row = addr.replace(/[^0-9]/g, "");
+        const next = `${col === "A" ? "B" : col}${row}`;
+        ws[next] = { t: "d", v: new Date(Date.UTC(2035, 0, 1, 12, 0)) };
+        break;
+      }
+    }
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    // Range check passes for midday 2035-01-01; parsing then fails later
+    // because the 2035 start is after the 2026 reset — never "out of range".
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /before reset/);
+  });
+
   it("rejects a dropped checkpoint as a schedule mismatch", () => {
     assert.throws(
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] })),
