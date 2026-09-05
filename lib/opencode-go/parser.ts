@@ -1,14 +1,14 @@
 import * as XLSX from "xlsx";
 
-import { validatePlanInputs } from "./calculations.js";
-import { generateCheckpoints } from "./schedule.js";
+import { validatePlanInputs } from "./calculations";
+import { generateCheckpoints } from "./schedule";
 import {
   casablancaWallToInstant,
   formatCasablancaDate,
   parseCasablancaDateTime,
-} from "./time.js";
-import type { OpenCodeGoParsedWorkbook } from "./types.js";
-import { FIXTURE_CHECK_TIME, FIXTURE_SHEET, FIXTURE_TITLE } from "./fixtures.js";
+} from "./time";
+import type { OpenCodeGoParsedWorkbook } from "./types";
+import { FIXTURE_CHECK_TIME, FIXTURE_SHEET, FIXTURE_TITLE } from "./fixtures";
 
 export type ParseCode =
   | "missing_sheet"

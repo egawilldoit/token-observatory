@@ -1,6 +1,6 @@
-import { checkpointCeiling, plannedCeiling } from "./calculations.js";
-import { reconcileFormulas } from "./formula.js";
-import type { OpenCodeGoParsedWorkbook } from "./types.js";
+import { checkpointCeiling, plannedCeiling } from "./calculations";
+import { reconcileFormulas } from "./formula";
+import type { OpenCodeGoParsedWorkbook } from "./types";
 
 export type StoredCheckpoint = {
   day: number;

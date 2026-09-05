@@ -3,7 +3,7 @@ import {
   formatCasablancaDate,
   instantToIso,
   localDateList,
-} from "./time.js";
+} from "./time";
 
 export type GeneratedCheckpoint = {
   day: number;

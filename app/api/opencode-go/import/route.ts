@@ -21,7 +21,8 @@ import {
 import { isCrossOriginRequest, requestExceedsBytes } from "@/lib/http/request";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 
-export const runtime = "nodejs";
+// Node.js route runtime (Next.js default). Workbook parsing uses node:zlib
+// and Buffer, so this route must never move to the edge runtime.
 
 function safeFilename(name: string) {
   const cleaned = name.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);

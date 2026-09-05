@@ -1,5 +1,5 @@
-import { latestRecordedActual } from "./calculations.js";
-import type { OpenCodeGoLatestRecorded, OpenCodeGoStatus } from "./types.js";
+import { latestRecordedActual } from "./calculations";
+import type { OpenCodeGoLatestRecorded, OpenCodeGoStatus } from "./types";
 
 export const NEAR_LIMIT_HEADROOM = 0.02;
 

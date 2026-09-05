@@ -603,7 +603,7 @@ describe("opencode-go import API contract", () => {
       new URL("../app/api/opencode-go/import/route.ts", import.meta.url),
       "utf8",
     );
-    assert.match(source, /runtime = "nodejs"/);
+    assert.doesNotMatch(source, /runtime = "edge"/);
     assert.match(source, /getObservatoryAccess/);
     assert.match(source, /isCrossOriginRequest/);
     assert.match(source, /OPENCODE_GO_MAX_REQUEST_BYTES/);

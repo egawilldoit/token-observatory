@@ -1,4 +1,4 @@
-import type { OpenCodeGoLatestRecorded } from "./types.js";
+import type { OpenCodeGoLatestRecorded } from "./types";
 
 export function plannedCeiling(args: { hardLimit: number; safetyReserve: number }): number {
   const { hardLimit, safetyReserve } = args;

@@ -1,6 +1,6 @@
-import { budgetRemaining, checkpointCeiling } from "./calculations.js";
-import { evaluateTrackerStatus } from "./status.js";
-import type { StoredSnapshot } from "./snapshot.js";
+import { budgetRemaining, checkpointCeiling } from "./calculations";
+import { evaluateTrackerStatus } from "./status";
+import type { StoredSnapshot } from "./snapshot";
 
 export type TrackerViewModel = {
   hasSnapshot: true;

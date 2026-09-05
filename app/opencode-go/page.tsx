@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { TrackerDashboard } from "@/components/opencode-go/tracker-dashboard";
+import { TrackerUpload } from "@/components/opencode-go/tracker-upload";
+import { ImportHistory } from "@/components/opencode-go/import-history";
 import { AppShell } from "@/components/telemetry/app-shell";
 import { TelemetryRouteLoading } from "@/components/telemetry/route-loading";
 import { SetupRequired } from "@/components/telemetry/setup-required";
@@ -28,9 +30,16 @@ async function OpenCodeGoRuntime() {
       ? buildTrackerViewModel(active.parsed_snapshot as StoredSnapshot, nowMs)
       : null;
 
-  void history;
-
-  return <TrackerDashboard view={view} />;
+  return (
+    <>
+      <TrackerDashboard
+        view={view}
+        history={<ImportHistory rows={history} />}
+      >
+        <TrackerUpload />
+      </TrackerDashboard>
+    </>
+  );
 }
 
 export default function OpenCodeGoPage() {

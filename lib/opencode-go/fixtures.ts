@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
-import { checkpointCeiling } from "./calculations.js";
-import { casablancaWallToInstant, localDateList } from "./time.js";
+import { checkpointCeiling } from "./calculations";
+import { casablancaWallToInstant, localDateList } from "./time";
 
 export const FIXTURE_TITLE = "OpenCode Go — Monthly Usage Tracker";
 export const FIXTURE_SHEET = "Monthly Tracker";

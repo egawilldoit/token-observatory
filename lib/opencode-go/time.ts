@@ -1,4 +1,4 @@
-import { OPENCODE_GO_TIMEZONE } from "./types.js";
+import { OPENCODE_GO_TIMEZONE } from "./types";
 
 export const CASABLANCA_TIMEZONE = OPENCODE_GO_TIMEZONE;
 

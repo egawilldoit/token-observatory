@@ -1,5 +1,5 @@
-import { checkpointCeiling, plannedCeiling } from "./calculations.js";
-import type { OpenCodeGoFormulaWarning, OpenCodeGoParsedWorkbook } from "./types.js";
+import { checkpointCeiling, plannedCeiling } from "./calculations";
+import type { OpenCodeGoFormulaWarning, OpenCodeGoParsedWorkbook } from "./types";
 
 export const FORMULA_TOLERANCE = 1e-6;
 export const MAX_FORMULA_WARNINGS = 50;
