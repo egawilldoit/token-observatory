@@ -63,6 +63,8 @@ supabase/migrations/20260830_005_cross_machine_dedupe_indexes.sql
 supabase/migrations/20260905_006_recovered_monthly_usage.sql
 supabase/migrations/20260905_007_recovered_additive_accounting.sql
 supabase/migrations/20260905_008_opencode_go_tracker.sql
+supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql
+supabase/migrations/20260905_010_opencode_go_upload_limit.sql
 ```
 
 The migrations create:
@@ -207,16 +209,20 @@ claims live or provider-verified usage.
 - Exact raw re-uploads are idempotent by SHA-256 (`exact_duplicate`).
 - Raw workbooks stay private in the `opencode-go-imports` bucket; there is no
   user-facing delete in V1.
-- Upload limits: 8 MiB file / 10 MiB request, at most 256 ZIP entries, 16 MiB
-  per entry and 32 MiB total decompressed. Effective production uploads on
-  Vercel are additionally capped by the platform request payload limit
-  (around 4.5 MB), which rejects larger bodies before application code runs.
-- Workbook parsing uses exactly pinned `xlsx@0.18.5` (latest published
-  release). `npm audit` reports its unpatched advisories
-  (GHSA-4r6h-8v6p-xvw6, GHSA-5pgg-2g8v-p4x9); no fixed release exists.
-  Mitigations: dep-free ZIP preflight bounds entry counts and decompressed
-  sizes before parsing, the parser reads scalar cells only and never merges
-  workbook objects, uploads require authenticated allowlisted users, and
-  parsing runs server-side only.
+- Effective production upload limits are 4 MiB per `.xlsx` and 4.25 MiB for
+  the multipart request, leaving 256 KiB for multipart framing below Vercel's
+  4.5 MB Function payload cap. ZIP preflight still limits archives to 256
+  entries, 16 MiB per decompressed entry, and 32 MiB total decompressed.
+- Workbook parsing currently uses exactly pinned `xlsx@0.18.5`, the last
+  version published to the npm registry. That registry release has known
+  prototype-pollution and ReDoS advisories (GHSA-4r6h-8v6p-xvw6,
+  GHSA-5pgg-2g8v-p4x9). Patched SheetJS CE releases exist from SheetJS's own
+  distribution channel, but not from the npm registry. V1 records this as an
+  explicit accepted dependency risk while the repository keeps its
+  registry-signature verification policy. Mitigations include a dependency-free
+  ZIP preflight with bounded entry counts/decompression before `XLSX.read`,
+  macro/encryption/traversal rejection, authenticated allowlisted uploads, and
+  server-only parsing. Replacing or vendoring the parser should remain a
+  follow-up security task rather than being treated as a nonexistent fix.
 
 See `docs/specs/2026-09-05-opencode-go-tracker-v1.md` for the full contract.
