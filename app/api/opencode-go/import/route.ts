@@ -95,7 +95,7 @@ export async function POST(request: Request) {
   }
   if (file.size <= 0 || file.size > OPENCODE_GO_MAX_FILE_BYTES) {
     return NextResponse.json(
-      { error: "XLSX file must be between 1 byte and 8 MB." },
+      { error: "XLSX file must be between 1 byte and 4 MiB." },
       { status: 413 },
     );
   }
