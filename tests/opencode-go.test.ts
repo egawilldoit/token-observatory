@@ -499,6 +499,24 @@ describe("opencode-go workbook parser", () => {
     );
   });
 
+  it("rejects out-of-range Date cells like out-of-range serials", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: true });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr]?.v === "Tracking starts") {
+        const col = addr.replace(/[0-9]/g, "");
+        const row = addr.replace(/[^0-9]/g, "");
+        const next = `${col === "A" ? "B" : col}${row}`;
+        ws[next] = { t: "d", v: new Date(Date.UTC(1999, 0, 1, 12, 0)) };
+        break;
+      }
+    }
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /out of range/);
+  });
+
   it("rejects a dropped checkpoint as a schedule mismatch", () => {
     assert.throws(
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] })),

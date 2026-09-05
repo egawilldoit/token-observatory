@@ -96,6 +96,9 @@ function dateCellToMs(raw: unknown, field: string, fallbackCheckTime: string): n
   if (raw instanceof Date) {
     const ms = raw.getTime();
     if (!Number.isFinite(ms)) fail("invalid_datetime", `${field} is an invalid date`);
+    if (ms < Date.UTC(2020, 0, 1) || ms > Date.UTC(2035, 0, 1)) {
+      fail("invalid_datetime", `${field} date is out of range`);
+    }
     return ms;
   }
   if (typeof raw === "number") {
