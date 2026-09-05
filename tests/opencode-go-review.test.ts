@@ -91,4 +91,21 @@ describe("OpenCode Go review hardening", () => {
     assert.ok(historyRead > claim, "same-cycle history must be read only after the processing claim");
     assert.match(route, /Another workbook for this cycle is already processing/);
   });
+
+  it("renders UPDATE_DUE copy from the configured checkpoint time", async () => {
+    const statusSource = await readFile(
+      new URL("../components/opencode-go/tracker-status.tsx", import.meta.url),
+      "utf8",
+    );
+    const dashboardSource = await readFile(
+      new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(statusSource, /checkTime:\s*string/);
+    assert.match(statusSource, /due at \$\{checkTime\}/);
+    assert.match(statusSource, /at \{checkTime\}/);
+    assert.doesNotMatch(statusSource, /due at 12:00/);
+    assert.match(dashboardSource, /checkTime=\{view\.cycle\.checkTime\}/);
+  });
 });
