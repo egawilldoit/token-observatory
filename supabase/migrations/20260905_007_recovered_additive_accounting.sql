@@ -1,5 +1,9 @@
 -- Correct the recovered set's provenance: it belongs to one lost PC and is
 -- additive at aggregate/monthly-compatible levels, not a VM mirror.
+--
+-- The recovery row is seeded separately from migrations. This migration must
+-- therefore remain valid both in production (where the row may already exist)
+-- and on a fresh database (where seeds run after the migration chain).
 alter table public.recovered_usage_sets
   drop constraint if exists recovered_usage_set_accounting_mode_check;
 
@@ -12,8 +16,6 @@ alter table public.recovered_usage_sets
   );
 
 do $$
-declare
-  v_updated integer;
 begin
   update public.recovered_usage_sets
   set
@@ -23,9 +25,7 @@ begin
     accounting_mode = 'additive_recovered'
   where id = 'lost-windows-history-2026-05-08';
 
-  get diagnostics v_updated = row_count;
-
-  if v_updated <> 1 or exists (
+  if exists (
     select 1
     from public.recovered_usage_sets
     where id = 'lost-windows-history-2026-05-08'
