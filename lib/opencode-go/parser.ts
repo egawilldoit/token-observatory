@@ -24,7 +24,8 @@ export type ParseCode =
   | "duplicate"
   | "non_increasing"
   | "schedule"
-  | "monotonic";
+  | "monotonic"
+  | "unsupported";
 
 export class OpenCodeGoParseError extends Error {
   code: ParseCode;
@@ -97,7 +98,9 @@ function assertSupportedDate(ms: number, field: string): void {
   // Compare UTC calendar dates so every representation (Date, serial,
   // date-only, datetime) shares one inclusive range, including all times on
   // the boundary days. Host-timezone independent by construction.
-  const day = new Date(ms).toISOString().slice(0, 10);
+  const date = new Date(ms);
+  if (Number.isNaN(date.getTime())) fail("invalid_datetime", `${field} is an invalid date`);
+  const day = date.toISOString().slice(0, 10);
   if (day < "2020-01-01" || day > "2035-01-01") {
     fail("invalid_datetime", `${field} date is out of range`);
   }
@@ -119,9 +122,18 @@ function dateCellToMs(raw: unknown, field: string, fallbackCheckTime: string): n
     const t = raw.trim();
     if (t === "") fail("invalid_datetime", `${field} is missing`);
     try {
-      if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(t)) return parseCasablancaDateTime(t);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return casablancaWallToInstant(t, fallbackCheckTime);
-    } catch {
+      if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(t)) {
+        const ms = parseCasablancaDateTime(t);
+        assertSupportedDate(ms, field);
+        return ms;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+        const ms = casablancaWallToInstant(t, fallbackCheckTime);
+        assertSupportedDate(ms, field);
+        return ms;
+      }
+    } catch (error) {
+      if (error instanceof OpenCodeGoParseError) throw error;
       // fall through
     }
     return fail("invalid_datetime", `${field} is an invalid date`);
@@ -195,6 +207,13 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
     wb = XLSX.read(buffer, { type: "buffer", cellDates: true, sheetStubs: false });
   } catch {
     throw new OpenCodeGoParseError("missing_sheet", "malformed workbook: could not read sheets");
+  }
+
+  // Serial dates are interpreted in the 1900 date system. Reject 1904-system
+  // workbooks explicitly rather than shifting every date by 1,462 days.
+  const date1904 = (wb.Workbook as { WBProps?: { date1904?: unknown } } | undefined)?.WBProps?.date1904;
+  if (date1904) {
+    fail("unsupported", "workbooks using the 1904 date system are not supported");
   }
 
   const sheetName = (wb.SheetNames ?? []).find((n) => n.trim() === OPENCODE_GO_WORKBOOK_SHEET);

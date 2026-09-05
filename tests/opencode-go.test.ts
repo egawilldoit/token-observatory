@@ -537,6 +537,56 @@ describe("opencode-go workbook parser", () => {
     assert.throws(() => parseOpenCodeGoWorkbook(out), /before reset/);
   });
 
+  it("rejects extreme serials with a controlled error, not a crash", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: false });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr]?.v === "Tracking starts") {
+        const col = addr.replace(/[0-9]/g, "");
+        const row = addr.replace(/[^0-9]/g, "");
+        const next = `${col === "A" ? "B" : col}${row}`;
+        ws[next] = { t: "n", v: 1e20 };
+        break;
+      }
+    }
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    assert.throws(
+      () => parseOpenCodeGoWorkbook(out),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.name === "OpenCodeGoParseError" &&
+        /invalid_datetime/.test(error.message),
+    );
+  });
+
+  it("rejects date-only strings outside the supported range", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: true });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      if (ws[addr]?.v === "Tracking starts") {
+        const col = addr.replace(/[0-9]/g, "");
+        const row = addr.replace(/[^0-9]/g, "");
+        const next = `${col === "A" ? "B" : col}${row}`;
+        ws[next] = { t: "s", v: "1999-01-01" };
+        break;
+      }
+    }
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /out of range/);
+  });
+
+  it("rejects 1904 date-system workbooks explicitly", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer" });
+    wb.Workbook = { ...(wb.Workbook ?? {}), WBProps: { date1904: true } };
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /1904/);
+  });
+
   it("rejects a dropped checkpoint as a schedule mismatch", () => {
     assert.throws(
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] })),
