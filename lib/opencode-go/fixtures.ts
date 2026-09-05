@@ -115,6 +115,16 @@ export function buildOpenCodeGoWorkbookBuffer(options: FixtureOptions = {}): Buf
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
+  // Preserve Excel date semantics in the serialized fixture: numeric serial
+  // values plus number formats. With cellDates:true SheetJS may surface these
+  // as Date objects; with cellDates:false the parser receives the raw serials.
+  if (ws.B4) ws.B4.z = "yyyy-mm-dd hh:mm";
+  if (ws.B7) ws.B7.z = "yyyy-mm-dd hh:mm";
+  for (let row = 16; row < 16 + dates.length; row += 1) {
+    const cell = ws[`B${row}`];
+    if (cell) cell.z = "yyyy-mm-dd";
+  }
+
   const wb = XLSX.utils.book_new();
   wb.Props = {
     Title: FIXTURE_TITLE,
