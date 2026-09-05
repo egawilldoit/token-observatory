@@ -209,3 +209,26 @@ component cards, and reported cost use the merged scope. Day and week controls
 remain available only when recovered monthly-only history is excluded; model
 filters show attributable canonical rows and explain why recovered tokens are
 not assigned to named models.
+
+## OpenCode Go Tracker (separate domain)
+
+OpenCode Go pacing lives under `lib/opencode-go`, `app/opencode-go`,
+`app/api/opencode-go/import`, and `opencode_go_imports`. It shares only
+infrastructure patterns with ccusage ingestion (authenticated allowlist,
+same-origin mutation guard, multipart bounds, SHA-256, private Storage,
+service-role Supabase); it shares no tables, views, parsers, or accounting.
+
+Import flow: configuration → authentication → allowlist → same-origin →
+request-size guard → multipart parse → XLSX ZIP preflight → SHA-256 →
+exact-duplicate check → strict workbook parse → expected-schedule validation
+→ application pacing recalculation → formula diagnostics → same-cycle
+plan/correction checks → processing row → private Storage upload →
+immutable processed snapshot.
+
+The expected checkpoint set is generated from tracking start, reset, and the
+daily check time in `Africa/Casablanca` (strictly between the two bounds);
+the workbook table must match it exactly. Freshness and the six-state status
+model (`RESET_REQUIRED` → `LIMIT_EXCEEDED` → `UPDATE_DUE` → `OVER_PACE` →
+`NEAR_LIMIT` → `ON_TRACK`) evaluate against server time. Active-cycle
+selection orders accepted snapshots by `tracking_start DESC, created_at
+DESC`. Workbook formulas never override application values.

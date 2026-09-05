@@ -3,6 +3,7 @@
 import {
   Activity,
   Database,
+  Gauge,
   Laptop,
   UploadCloud,
 } from "lucide-react";
@@ -14,6 +15,7 @@ import { LogoutButton } from "@/components/logout-button";
 
 const navigation = [
   { href: "/dashboard", label: "Overview", icon: Activity },
+  { href: "/opencode-go", label: "OpenCode Go", icon: Gauge },
   { href: "/imports", label: "Imports", icon: UploadCloud },
   { href: "/machines", label: "Machines", icon: Laptop },
 ];
@@ -34,7 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Token Observatory
               </p>
               <p className="mt-0.5 text-[10px] text-slate-400">
-                ccusage telemetry
+                usage telemetry
               </p>
             </div>
           </Link>

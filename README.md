@@ -62,6 +62,10 @@ supabase/migrations/20260830_004_cross_machine_session_dedupe.sql
 supabase/migrations/20260830_005_cross_machine_dedupe_indexes.sql
 supabase/migrations/20260905_006_recovered_monthly_usage.sql
 supabase/migrations/20260905_007_recovered_additive_accounting.sql
+supabase/migrations/20260905_008_opencode_go_tracker.sql
+supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql
+supabase/migrations/20260905_010_opencode_go_upload_limit.sql
+supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql
 ```
 
 The migrations create:
@@ -86,6 +90,9 @@ The migrations create:
 - private Storage bucket `raw-imports`
 - per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
 - `recovered_usage_sets` and `recovered_monthly_usage` for preserved historical evidence
+- `opencode_go_imports` for immutable OpenCode Go tracker snapshots
+- private Storage bucket `opencode-go-imports` for raw OpenCode Go workbooks
+- a one-processing-import-per-cycle guard so same-cycle history validation cannot race
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.
@@ -179,3 +186,47 @@ Only the all-machines view excludes rows proven to be mirrors.
 Processed imports created before session telemetry can be enriched from their
 private raw Storage object via `POST /api/sessions/backfill`. This inserts
 evidence only and never re-adds canonical usage.
+
+## OpenCode Go Tracker
+
+`/opencode-go` tracks OpenCode Go monthly-usage pacing against a fixed
+subscription-cycle plan. It is a separate telemetry domain from ccusage: it
+never reads or writes ccusage or recovered tables, and it never feeds the
+unified token dashboard.
+
+V1 input is the uploaded OpenCode Go monthly tracker `.xlsx`. The entered
+`Actual Usage` values are recorded observations — there is no OpenCode
+provider API, sync, scraping, or credential storage in V1, and the UI never
+claims live or provider-verified usage.
+
+- Cycle/checkpoint math uses `Africa/Casablanca`; freshness uses server time.
+- The application recomputes checkpoint ceilings, headroom, budget remaining,
+  freshness, and status; workbook formulas are warning-only diagnostics.
+- Statuses: `RESET_REQUIRED` → `LIMIT_EXCEEDED` → `UPDATE_DUE` → `OVER_PACE`
+  → `NEAR_LIMIT` (within 2 percentage points) → `ON_TRACK`.
+- Accepted snapshots in `opencode_go_imports` are immutable. Corrections
+  arrive as newer same-cycle uploads: previously recorded actuals may move up
+  or down while the full sequence stays non-decreasing, but non-null values
+  may never become blank and the cycle plan is frozen after first acceptance.
+- Same-cycle uploads are serialized while processing so a concurrent workbook
+  cannot validate against stale accepted history and then supersede a newer snapshot.
+- Exact raw re-uploads are idempotent by SHA-256 (`exact_duplicate`).
+- Raw workbooks stay private in the `opencode-go-imports` bucket; there is no
+  user-facing delete in V1.
+- Effective production upload limits are 4 MiB per `.xlsx` and 4.25 MiB for
+  the multipart request, leaving 256 KiB for multipart framing below Vercel's
+  4.5 MB Function payload cap. ZIP preflight still limits archives to 256
+  entries, 16 MiB per decompressed entry, and 32 MiB total decompressed.
+- Workbook parsing currently uses exactly pinned `xlsx@0.18.5`, the last
+  version published to the npm registry. That registry release has known
+  prototype-pollution and ReDoS advisories (GHSA-4r6h-8v6p-xvw6,
+  GHSA-5pgg-2g8v-p4x9). Patched SheetJS CE releases exist from SheetJS's own
+  distribution channel, but not from the npm registry. V1 records this as an
+  explicit accepted dependency risk while the repository keeps its
+  registry-signature verification policy. Mitigations include a dependency-free
+  ZIP preflight with bounded entry counts/decompression before `XLSX.read`,
+  macro/encryption/traversal rejection, authenticated allowlisted uploads, and
+  server-only parsing. Replacing or vendoring the parser should remain a
+  follow-up security task rather than being treated as a nonexistent fix.
+
+See `docs/specs/2026-09-05-opencode-go-tracker-v1.md` for the full contract.
