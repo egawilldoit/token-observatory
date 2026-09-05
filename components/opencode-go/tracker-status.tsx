@@ -44,10 +44,12 @@ export function TrackerStatus({
   status,
   preFirstCheckpoint,
   requiredDate,
+  checkTime,
 }: {
   status: OpenCodeGoStatus;
   preFirstCheckpoint: boolean;
   requiredDate: string | null;
+  checkTime: string;
 }) {
   const meta = STATUS_META[status];
   const description =
@@ -56,7 +58,7 @@ export function TrackerStatus({
       : status === "LIMIT_EXCEEDED"
         ? "Recorded usage reached the hard monthly limit."
         : status === "UPDATE_DUE"
-          ? "Today's checkpoint was due at 12:00. Last recorded usage is shown below."
+          ? `Today's checkpoint was due at ${checkTime}. Last recorded usage is shown below.`
           : status === "OVER_PACE"
             ? "Recorded usage is above the planned ceiling."
             : status === "NEAR_LIMIT"
@@ -92,7 +94,7 @@ export function TrackerStatus({
       <p className="mt-3 text-sm leading-6 text-slate-600">{description}</p>
       {requiredDate && status === "UPDATE_DUE" ? (
         <p className="mt-1 text-xs text-slate-500">
-          Missing checkpoint: {requiredDate} at 12:00
+          Missing checkpoint: {requiredDate} at {checkTime}
         </p>
       ) : null}
       {cta ? (
