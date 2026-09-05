@@ -95,12 +95,14 @@ function parseFraction(raw: unknown, field: string): number {
 
 function assertSupportedDate(ms: number, field: string): void {
   if (!Number.isFinite(ms)) fail("invalid_datetime", `${field} is an invalid date`);
-  // Compare UTC calendar dates so every representation (Date, serial,
-  // date-only, datetime) shares one inclusive range, including all times on
-  // the boundary days. Host-timezone independent by construction.
+  // Compare Casablanca calendar dates so every representation (Date, serial,
+  // date-only, datetime) shares one inclusive range. Wall dates are correct
+  // at the bounds even when the instant falls on the neighboring UTC day.
+  // Host-timezone independent: the conversion is anchored to the tracker's
+  // Africa/Casablanca timezone, not the server locale.
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) fail("invalid_datetime", `${field} is an invalid date`);
-  const day = date.toISOString().slice(0, 10);
+  const day = formatCasablancaDate(ms);
   if (day < "2020-01-01" || day > "2035-01-01") {
     fail("invalid_datetime", `${field} date is out of range`);
   }

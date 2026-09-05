@@ -587,6 +587,32 @@ describe("opencode-go workbook parser", () => {
     assert.throws(() => parseOpenCodeGoWorkbook(out), /1904/);
   });
 
+  it("judges the range check by Casablanca wall date at the lower bound", async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: true });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    const setNextTo = (label: string, cell: { v?: unknown; t?: string }) => {
+      for (const addr of Object.keys(ws)) {
+        if (addr.startsWith("!")) continue;
+        if (ws[addr]?.v === label) {
+          const col = addr.replace(/[0-9]/g, "");
+          const row = addr.replace(/[^0-9]/g, "");
+          ws[`${col === "A" ? "B" : col}${row}`] = cell;
+          return;
+        }
+      }
+      throw new Error(`label not found: ${label}`);
+    };
+    // 2020-01-01 00:00 Casablanca is 2019-12-31T23:00Z: a UTC-slice check
+    // would wrongly reject the exact lower-bound wall date.
+    setNextTo("Daily check time", { t: "s", v: "00:00" });
+    setNextTo("Tracking starts", { t: "s", v: "2020-01-01" });
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    // Range and start/reset checks pass for the lower-bound wall date;
+    // parsing continues until the 12:00 fixture rows mismatch the 00:00 label.
+    assert.throws(() => parseOpenCodeGoWorkbook(out), /inconsistent checkpoint time/);
+  });
+
   it("rejects a dropped checkpoint as a schedule mismatch", () => {
     assert.throws(
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ dropDates: ["2026-09-05"] })),
