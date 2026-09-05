@@ -38,7 +38,11 @@ function preflightStatus(code: string): number {
   return code === "too_large" ? 413 : 422;
 }
 
-async function markFailed(supabase: ReturnType<typeof createAdminClient>, importId: string, message: string) {
+async function markFailed(
+  supabase: ReturnType<typeof createAdminClient>,
+  importId: string,
+  message: string,
+) {
   await supabase
     .from("opencode_go_imports")
     .update({
@@ -190,6 +194,63 @@ export async function POST(request: Request) {
 
   const trackingStartIso = new Date(parsed.trackingStartMs).toISOString();
   const resetAtIso = new Date(parsed.resetAtMs).toISOString();
+  const importId = randomUUID();
+  const storagePath = `${importId}/${safeFilename(file.name)}`;
+
+  // Claim the cycle BEFORE reading its latest accepted snapshot. Migration 011
+  // permits only one processing row per cycle, so a concurrent different-SHA
+  // upload cannot validate against stale history and later overwrite a newer
+  // accepted observation. Once this claim succeeds, all same-cycle validation
+  // below sees the latest committed processed snapshot.
+  const { error: insertError } = await supabase.from("opencode_go_imports").insert({
+    id: importId,
+    filename: safeFilename(file.name),
+    file_size_bytes: file.size,
+    raw_sha256: rawSha,
+    tracking_start: trackingStartIso,
+    reset_at: resetAtIso,
+    check_time: parsed.checkTime,
+    status: "processing",
+  });
+
+  if (insertError) {
+    const { data: racedRaw } = await supabase
+      .from("opencode_go_imports")
+      .select("id")
+      .eq("raw_sha256", rawSha)
+      .in("status", ["processing", "processed"])
+      .limit(1)
+      .maybeSingle();
+    if (racedRaw) {
+      return NextResponse.json(
+        {
+          error: "This exact workbook was claimed by another import.",
+          duplicateOfImportId: (racedRaw as { id: string }).id,
+        },
+        { status: 409 },
+      );
+    }
+
+    const { data: racedCycle } = await supabase
+      .from("opencode_go_imports")
+      .select("id")
+      .eq("status", "processing")
+      .eq("tracking_start", trackingStartIso)
+      .eq("reset_at", resetAtIso)
+      .limit(1)
+      .maybeSingle();
+    if (racedCycle) {
+      return NextResponse.json(
+        {
+          error: "Another workbook for this cycle is already processing. Retry after it finishes.",
+          importId: (racedCycle as { id: string }).id,
+        },
+        { status: 409 },
+      );
+    }
+
+    return NextResponse.json({ error: "Could not create the import record." }, { status: 500 });
+  }
 
   const { data: previous, error: previousError } = await supabase
     .from("opencode_go_imports")
@@ -202,6 +263,7 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (previousError) {
+    await markFailed(supabase, importId, previousError.message);
     return NextResponse.json({ error: "Could not read accepted import history." }, { status: 500 });
   }
 
@@ -238,6 +300,8 @@ export async function POST(request: Request) {
         ceilings.map((c) => ({ date: c.date, actual: c.actual })),
       );
     } catch (error) {
+      const message = error instanceof Error ? error.message : "same-cycle validation failed";
+      await markFailed(supabase, importId, message);
       if (error instanceof OpenCodeGoConflictError) {
         if (error.code === "monotonic") {
           return NextResponse.json({ error: error.message }, { status: 422 });
@@ -246,37 +310,6 @@ export async function POST(request: Request) {
       }
       return NextResponse.json({ error: "Could not validate import history." }, { status: 500 });
     }
-  }
-
-  const importId = randomUUID();
-  const storagePath = `${importId}/${safeFilename(file.name)}`;
-
-  const { error: insertError } = await supabase.from("opencode_go_imports").insert({
-    id: importId,
-    filename: safeFilename(file.name),
-    file_size_bytes: file.size,
-    raw_sha256: rawSha,
-    tracking_start: trackingStartIso,
-    reset_at: resetAtIso,
-    check_time: parsed.checkTime,
-    status: "processing",
-  });
-
-  if (insertError) {
-    const { data: raced } = await supabase
-      .from("opencode_go_imports")
-      .select("id")
-      .eq("raw_sha256", rawSha)
-      .in("status", ["processing", "processed"])
-      .limit(1)
-      .maybeSingle();
-    if (raced) {
-      return NextResponse.json(
-        { error: "This exact workbook was claimed by another import.", duplicateOfImportId: (raced as { id: string }).id },
-        { status: 409 },
-      );
-    }
-    return NextResponse.json({ error: "Could not create the import record." }, { status: 500 });
   }
 
   const { error: storageError } = await supabase.storage
@@ -291,8 +324,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Raw file storage failed." }, { status: 500 });
   }
 
-  const parsedSnapshot = stored;
-
   const { data: finalized, error: finalizeError } = await supabase
     .from("opencode_go_imports")
     .update({
@@ -304,7 +335,7 @@ export async function POST(request: Request) {
       planned_ceiling: planned,
       latest_actual_usage: latest.value,
       latest_actual_date: latest.checkpointDate,
-      parsed_snapshot: parsedSnapshot,
+      parsed_snapshot: stored,
       formula_mismatch_count: mismatchCount,
       formula_warnings: formulaWarnings,
       processed_at: new Date().toISOString(),
