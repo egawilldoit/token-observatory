@@ -54,7 +54,7 @@ export function RecoveredHistoryCard({
             </span>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
-                Evidence archive
+                Recovered monthly usage
               </p>
               <h2
                 id="recovered-history-heading"
@@ -63,15 +63,15 @@ export function RecoveredHistoryCard({
                 Recovered History
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-                Two lost machines reported identical monthly ccusage history.
-                Stored as one suspected-mirrored evidence dataset — never two
-                copies of usage.
+                One lost Windows PC produced this monthly history. It is included
+                in Total Known Usage while remaining separate from the VM&apos;s
+                canonical detailed telemetry.
               </p>
             </div>
           </div>
           <div className="rounded-xl border border-amber-300 bg-white/70 px-3 py-2 text-right">
             <p className="text-[10px] uppercase tracking-[0.12em] text-amber-700">
-              Evidence only
+              Included in known total
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-950">
               {set.total_tokens.toLocaleString()}
@@ -140,19 +140,22 @@ export function RecoveredHistoryCard({
             <div className="flex items-start gap-2">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <div>
-                <p className="font-semibold text-slate-800">Not added to canonical telemetry</p>
+                <p className="font-semibold text-slate-800">Included in Total Known Usage</p>
                 <p className="mt-1 leading-5">
-                  This evidence does not enter daily, model, session, import, or
-                  global-dedupe totals. Historical overlap is unknown.
+                  This monthly-only history contributes to the aggregate known
+                  total. It remains outside daily, model, session, import, and
+                  cross-machine dedupe views because the original machine was
+                  lost before a detailed export could be created.
                 </p>
               </div>
             </div>
           </div>
           <div className="rounded-xl border border-amber-200/80 bg-white/50 p-3 leading-5">
-            <p><span className="font-medium text-slate-700">Source:</span> {set.source_machine_count} lost machines; suspected mirror</p>
+            <p><span className="font-medium text-slate-700">Source:</span> {set.source_machine_count} lost Windows PC; separate from the VM</p>
             <p><span className="font-medium text-slate-700">Confidence:</span> Exact monthly aggregates</p>
             <p><span className="font-medium text-slate-700">Granularity:</span> Monthly / agent only</p>
-            <p><span className="font-medium text-slate-700">Reported cost:</span> {money(set.reported_cost_usd)}; pricing incomplete</p>
+            <p><span className="font-medium text-slate-700">Accounting:</span> Additive aggregate; no daily/session reconstruction</p>
+            <p><span className="font-medium text-slate-700">Reported cost:</span> {money(set.reported_cost_usd)}; potentially incomplete pricing</p>
           </div>
           <div className="flex items-start gap-2 rounded-xl border border-amber-200/80 bg-white/50 p-3 leading-5">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />

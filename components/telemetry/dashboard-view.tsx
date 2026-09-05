@@ -17,11 +17,13 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { RecoveredHistoryCard } from "@/components/telemetry/recovered-history-card";
+import { KnownUsageSummary } from "@/components/telemetry/known-usage-summary";
 import type {
   CurrentDailyModelUsageRow,
   CurrentDailyUsageRow,
 } from "@/lib/ccusage/types";
 import type { RecoveredUsageEvidence } from "@/lib/recovery/types";
+import type { KnownUsageTotals } from "@/lib/telemetry/known-usage-math";
 import type {
   ImportRow,
   MachineCollectionHint,
@@ -229,6 +231,7 @@ export function DashboardView({
   recentImports,
   collectionHints,
   recoveredEvidence,
+  knownUsageTotals,
 }: {
   rows: CurrentDailyUsageRow[];
   modelRows: CurrentDailyModelUsageRow[];
@@ -236,6 +239,7 @@ export function DashboardView({
   recentImports: ImportRow[];
   collectionHints: MachineCollectionHint[];
   recoveredEvidence: RecoveredUsageEvidence | null;
+  knownUsageTotals: KnownUsageTotals;
 }) {
   const router = useRouter();
   const [machine, setMachine] = useState("all");
@@ -668,6 +672,7 @@ export function DashboardView({
         </div>
       </header>
 
+      <KnownUsageSummary totals={knownUsageTotals} />
       <RecoveredHistoryCard evidence={recoveredEvidence} />
 
       {rows.length === 0 ? (

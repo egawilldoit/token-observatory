@@ -107,11 +107,11 @@ insert into public.recovered_usage_sets (
 )
 values (
   'lost-windows-history-2026-05-08',
-  'Recovered ccusage monthly reports from two permanently lost Windows machines',
+  'Recovered ccusage monthly report from one permanently lost Windows PC',
   'terminal_ccusage_monthly',
-  2,
-  true,
-  'evidence_only_non_additive',
+  1,
+  false,
+  'additive_recovered',
   'exact_monthly_aggregate',
   'monthly_agent',
   303197832,
@@ -268,7 +268,23 @@ WARN  Missing pricing for ox-alpha-free; cost excludes this model. Update pricin
 PS C:\Users\abdelilah.mortaki>
 $lost_machine_a$
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  description = excluded.description,
+  source_type = excluded.source_type,
+  source_machine_count = excluded.source_machine_count,
+  suspected_mirror = excluded.suspected_mirror,
+  accounting_mode = excluded.accounting_mode,
+  confidence = excluded.confidence,
+  granularity = excluded.granularity,
+  total_input_tokens = excluded.total_input_tokens,
+  total_output_tokens = excluded.total_output_tokens,
+  total_cache_creation_tokens = excluded.total_cache_creation_tokens,
+  total_cache_read_tokens = excluded.total_cache_read_tokens,
+  total_tokens = excluded.total_tokens,
+  reported_cost_usd = excluded.reported_cost_usd,
+  pricing_complete = excluded.pricing_complete,
+  warnings = excluded.warnings,
+  raw_terminal_text = excluded.raw_terminal_text;
 
 insert into public.recovered_monthly_usage (
   id,
@@ -344,9 +360,9 @@ begin
   where id = 'lost-windows-history-2026-05-08';
 
   if v_set_count <> 1 or v_row_count <> 13 or v_mismatched_rows <> 0 or v_total <> 9666290902
-    or v_source_machine_count <> 2
-    or v_suspected_mirror is distinct from true
-    or v_accounting_mode <> 'evidence_only_non_additive'
+    or v_source_machine_count <> 1
+    or v_suspected_mirror is distinct from false
+    or v_accounting_mode <> 'additive_recovered'
     or v_pricing_complete is distinct from false then
     raise exception 'Recovered seed verification failed';
   end if;

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
+import { combineKnownUsageTotals } from "../lib/telemetry/known-usage-math";
+
 const migrationPath = new URL(
   "../supabase/migrations/20260905_006_recovered_monthly_usage.sql",
   import.meta.url,
@@ -10,8 +12,16 @@ const seedPath = new URL(
   "../supabase/seeds/recovered_monthly_usage.sql",
   import.meta.url,
 );
+const correctionMigrationPath = new URL(
+  "../supabase/migrations/20260905_007_recovered_additive_accounting.sql",
+  import.meta.url,
+);
 const dashboardCardPath = new URL(
   "../components/telemetry/recovered-history-card.tsx",
+  import.meta.url,
+);
+const knownUsageSummaryPath = new URL(
+  "../components/telemetry/known-usage-summary.tsx",
   import.meta.url,
 );
 
@@ -72,6 +82,23 @@ test("recovered monthly evidence reconciles within each month and overall", () =
   assert.equal(rows.length, 13);
 });
 
+test("known usage adds one additive recovery set without changing canonical totals", () => {
+  const totals = combineKnownUsageTotals(
+    [
+      { reported_total_tokens: 8204457186, global_duplicate: false },
+      { reported_total_tokens: 123, global_duplicate: true },
+    ],
+    [
+      { total_tokens: 9666290902, accounting_mode: "additive_recovered" },
+      { total_tokens: 7, accounting_mode: "evidence_only_non_additive" },
+    ],
+  );
+
+  assert.equal(totals.canonicalTokens, 8204457186);
+  assert.equal(totals.additiveRecoveredTokens, 9666290902);
+  assert.equal(totals.knownTokens, 17870748088);
+});
+
 test("recovery migration is isolated, protected, and constrained", async () => {
   const migration = await readFile(migrationPath, "utf8");
 
@@ -102,10 +129,10 @@ test("seed is deterministic, idempotent, and preserves warnings/model-name evide
   const seed = await readFile(seedPath, "utf8");
 
   assert.match(seed, /lost-windows-history-2026-05-08/);
-  assert.match(seed, /on conflict \(id\) do nothing/);
+  assert.match(seed, /on conflict \(id\) do update set/);
   assert.match(seed, /on conflict \(recovery_set_id, month, agent\) do nothing/);
-  assert.match(seed, /\n  2,\n  true,/);
-  assert.match(seed, /evidence_only_non_additive/);
+  assert.match(seed, /\n  1,\n  false,/);
+  assert.match(seed, /additive_recovered/);
   assert.match(seed, /pricing_complete,\s*warnings/);
   assert.match(seed, /laguna-s-2\.1-free/);
   assert.match(seed, /ox-alpha-free/);
@@ -116,18 +143,34 @@ test("seed is deterministic, idempotent, and preserves warnings/model-name evide
   assert.doesNotMatch(seed, /model_(?:input|output|cache|total)_tokens/);
 });
 
-test("models remain names only and recovered totals stay outside canonical views", async () => {
-  const [migration, seed, card] = await Promise.all([
+test("the forward correction scopes additive semantics to the known recovery set", async () => {
+  const correction = await readFile(correctionMigrationPath, "utf8");
+
+  assert.match(correction, /drop constraint if exists recovered_usage_set_accounting_mode_check/);
+  assert.match(correction, /accounting_mode in/);
+  assert.match(correction, /source_machine_count = 1/);
+  assert.match(correction, /suspected_mirror = false/);
+  assert.match(correction, /accounting_mode = 'additive_recovered'/);
+  assert.match(correction, /where id = 'lost-windows-history-2026-05-08'/);
+  assert.doesNotMatch(correction, /daily_usage_observations|v_current_daily_usage|cross_machine_daily_dedupe/);
+});
+
+test("models remain names only and recovered totals stay out of canonical detail views", async () => {
+  const [migration, seed, card, summary] = await Promise.all([
     readFile(migrationPath, "utf8"),
     readFile(seedPath, "utf8"),
     readFile(dashboardCardPath, "utf8"),
+    readFile(knownUsageSummaryPath, "utf8"),
   ]);
 
   assert.match(migration, /models text\[\]/);
   assert.match(card, /Recovered History/);
-  assert.match(card, /Evidence only/);
-  assert.match(card, /Not added to canonical telemetry/);
-  assert.match(card, /suspected-mirrored/);
+  assert.match(card, /Included in Total Known Usage/);
+  assert.doesNotMatch(card, /Not added to canonical telemetry/);
+  assert.doesNotMatch(card, /suspected-mirrored/);
   assert.match(card, /No per-model token totals were fabricated/);
+  assert.match(summary, /Total Known Usage/);
+  assert.match(summary, /Canonical detailed telemetry/);
+  assert.match(summary, /Recovered monthly telemetry/);
   assert.doesNotMatch(seed, /daily_usage_observations|v_current_daily_usage|cross_machine_daily_dedupe/);
 });
