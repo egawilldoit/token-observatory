@@ -27,7 +27,6 @@ import {
   OPENCODE_GO_MAX_FILE_BYTES,
   preflightXlsxBuffer,
 } from "../lib/opencode-go/xlsx-security.js";
-import { FIXTURE_TITLE } from "../lib/opencode-go/fixtures.js";
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
