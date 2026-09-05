@@ -3,8 +3,8 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 
 const queryPath = new URL("../lib/recovery/queries.ts", import.meta.url);
-const cardPath = new URL(
-  "../components/telemetry/recovered-history-card.tsx",
+const dashboardPath = new URL(
+  "../components/telemetry/dashboard-view.tsx",
   import.meta.url,
 );
 const correctionMigrationPath = new URL(
@@ -15,6 +15,8 @@ const correctionMigrationPath = new URL(
 test("latest recovery evidence keeps monthly rows aligned with the selected set", async () => {
   const query = await readFile(queryPath, "utf8");
 
+  assert.match(query, /const RECOVERED_SET_ID = "lost-windows-history-2026-05-08"/);
+  assert.match(query, /\.eq\("id", RECOVERED_SET_ID\)/);
   assert.match(query, /\.limit\(1\)/);
   assert.match(query, /getRecoveredMonthlyRows\(set\.id\)/);
   assert.doesNotMatch(
@@ -23,14 +25,13 @@ test("latest recovery evidence keeps monthly rows aligned with the selected set"
   );
 });
 
-test("recovered-history inclusion copy follows accounting mode", async () => {
-  const card = await readFile(cardPath, "utf8");
+test("the main dashboard owns recovered-history inclusion copy", async () => {
+  const dashboard = await readFile(dashboardPath, "utf8");
 
-  assert.match(card, /set\.accounting_mode === "additive_recovered"/);
-  assert.match(card, /Included in Total Known Usage/);
-  assert.match(card, /Evidence only/);
-  assert.match(card, /does not contribute to Total Known Usage/);
-  assert.match(card, /excluded from Total Known Usage/);
+  assert.match(dashboard, /Lost Windows PC history is included/);
+  assert.match(dashboard, /Daily and weekly detail is unavailable/);
+  assert.match(dashboard, /per-model token attribution is unavailable/);
+  assert.doesNotMatch(dashboard, /KnownUsageSummary|RecoveredHistoryCard/);
 });
 
 test("additive correction migration is safe before the recovery seed exists", async () => {

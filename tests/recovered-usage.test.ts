@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 
-import { combineKnownUsageTotals } from "../lib/telemetry/known-usage-math";
-
 const migrationPath = new URL(
   "../supabase/migrations/20260905_006_recovered_monthly_usage.sql",
   import.meta.url,
@@ -16,12 +14,8 @@ const correctionMigrationPath = new URL(
   "../supabase/migrations/20260905_007_recovered_additive_accounting.sql",
   import.meta.url,
 );
-const dashboardCardPath = new URL(
-  "../components/telemetry/recovered-history-card.tsx",
-  import.meta.url,
-);
-const knownUsageSummaryPath = new URL(
-  "../components/telemetry/known-usage-summary.tsx",
+const dashboardPath = new URL(
+  "../components/telemetry/dashboard-view.tsx",
   import.meta.url,
 );
 
@@ -82,23 +76,6 @@ test("recovered monthly evidence reconciles within each month and overall", () =
   assert.equal(rows.length, 13);
 });
 
-test("known usage adds one additive recovery set without changing canonical totals", () => {
-  const totals = combineKnownUsageTotals(
-    [
-      { reported_total_tokens: 8204457186, global_duplicate: false },
-      { reported_total_tokens: 123, global_duplicate: true },
-    ],
-    [
-      { total_tokens: 9666290902, accounting_mode: "additive_recovered" },
-      { total_tokens: 7, accounting_mode: "evidence_only_non_additive" },
-    ],
-  );
-
-  assert.equal(totals.canonicalTokens, 8204457186);
-  assert.equal(totals.additiveRecoveredTokens, 9666290902);
-  assert.equal(totals.knownTokens, 17870748088);
-});
-
 test("recovery migration is isolated, protected, and constrained", async () => {
   const migration = await readFile(migrationPath, "utf8");
 
@@ -155,22 +132,47 @@ test("the forward correction scopes additive semantics to the known recovery set
   assert.doesNotMatch(correction, /daily_usage_observations|v_current_daily_usage|cross_machine_daily_dedupe/);
 });
 
-test("models remain names only and recovered totals stay out of canonical detail views", async () => {
-  const [migration, seed, card, summary] = await Promise.all([
+test("terminal evidence remains names-only and the dashboard has one total path", async () => {
+  const [migration, seed, dashboard] = await Promise.all([
     readFile(migrationPath, "utf8"),
     readFile(seedPath, "utf8"),
-    readFile(dashboardCardPath, "utf8"),
-    readFile(knownUsageSummaryPath, "utf8"),
+    readFile(dashboardPath, "utf8"),
   ]);
 
   assert.match(migration, /models text\[\]/);
-  assert.match(card, /Recovered History/);
-  assert.match(card, /Included in Total Known Usage/);
-  assert.doesNotMatch(card, /Not added to canonical telemetry/);
-  assert.doesNotMatch(card, /suspected-mirrored/);
-  assert.match(card, /No per-model token totals were fabricated/);
-  assert.match(summary, /Total Known Usage/);
-  assert.match(summary, /Canonical detailed telemetry/);
-  assert.match(summary, /Recovered monthly telemetry/);
+  assert.match(seed, /Missing pricing for laguna-s-2\.1-free/);
+  assert.match(seed, /Missing pricing for ox-alpha-free/);
+  for (const value of [
+    9172233,
+    760817,
+    104578084,
+    114511134,
+    66366953,
+    6913485,
+    1324959636,
+    1398240074,
+    104026745,
+    9579406,
+    2360740627,
+    2474346778,
+    123631901,
+    14944563,
+    5540616452,
+    5679192916,
+    303197832,
+    32198271,
+    9330894799,
+    9666290902,
+    1386.19,
+  ]) {
+    assert.match(seed, new RegExp(String(value).replace(".", "\\.")));
+  }
+  assert.match(seed, /gpt-5\.6-terra/);
+  assert.match(seed, /\[pi\] deepseek-v4-flash/);
+  assert.match(dashboard, /projection/);
+  assert.match(dashboard, /Lost Windows PC/);
+  assert.match(dashboard, /Reported cost is incomplete/);
+  assert.doesNotMatch(dashboard, /KnownUsageSummary|RecoveredHistoryCard/);
+  assert.doesNotMatch(dashboard, /Total Known Usage|Recovered History/);
   assert.doesNotMatch(seed, /daily_usage_observations|v_current_daily_usage|cross_machine_daily_dedupe/);
 });
