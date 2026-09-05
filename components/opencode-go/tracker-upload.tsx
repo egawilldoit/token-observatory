@@ -17,9 +17,11 @@ type ImportResult =
       duplicateOfImportId: string;
     };
 
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 function friendlyError(status: number, serverMessage: string | null): string {
   if (serverMessage) return serverMessage;
-  if (status === 413) return "File is too large. The .xlsx tracker must be under 8 MB.";
+  if (status === 413) return "File is too large. The .xlsx tracker must be 4 MiB or smaller.";
   if (status === 409) return "This upload conflicts with accepted history. See details below.";
   if (status === 401 || status === 403) return "You do not have access to upload trackers.";
   return "Upload failed. Try again.";
@@ -34,9 +36,14 @@ export function TrackerUpload() {
   const [dragging, setDragging] = useState(false);
 
   async function upload(file: File) {
-    setBusy(true);
     setResult(null);
     setError(null);
+    if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
+      setError("File is too large. The .xlsx tracker must be 4 MiB or smaller.");
+      return;
+    }
+
+    setBusy(true);
     try {
       const form = new FormData();
       form.append("file", file, file.name);
@@ -69,7 +76,7 @@ export function TrackerUpload() {
     >
       <h2 className="font-semibold text-slate-950">Upload monthly tracker</h2>
       <p className="mt-1 text-xs text-slate-500">
-        Accepts the OpenCode Go monthly tracker .xlsx. Recorded Actual Usage
+        Accepts the OpenCode Go monthly tracker .xlsx up to 4 MiB. Recorded Actual Usage
         values become the V1 observation source.
       </p>
       <div
