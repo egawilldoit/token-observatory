@@ -74,7 +74,9 @@ export function evaluateTrackerStatus(args: {
 
   const headroom = required.ceiling - (required.actual as number);
 
-  if ((required.actual as number) > required.ceiling && (required.actual as number) < hardLimit) {
+  // LIMIT_EXCEEDED already handled above using the latest recorded value, so any
+  // fresh required actual above its ceiling is over pace.
+  if ((required.actual as number) > required.ceiling) {
     return { status: "OVER_PACE", required, latestRecorded, headroom, preFirstCheckpoint: false };
   }
 

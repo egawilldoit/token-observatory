@@ -209,7 +209,14 @@ claims live or provider-verified usage.
   user-facing delete in V1.
 - Upload limits: 8 MiB file / 10 MiB request, at most 256 ZIP entries, 16 MiB
   per entry and 32 MiB total decompressed. Effective production uploads on
-  Vercel Hobby are additionally capped by the platform request payload limit
+  Vercel are additionally capped by the platform request payload limit
   (around 4.5 MB), which rejects larger bodies before application code runs.
+- Workbook parsing uses exactly pinned `xlsx@0.18.5` (latest published
+  release). `npm audit` reports its unpatched advisories
+  (GHSA-4r6h-8v6p-xvw6, GHSA-5pgg-2g8v-p4x9); no fixed release exists.
+  Mitigations: dep-free ZIP preflight bounds entry counts and decompressed
+  sizes before parsing, the parser reads scalar cells only and never merges
+  workbook objects, uploads require authenticated allowlisted users, and
+  parsing runs server-side only.
 
 See `docs/specs/2026-09-05-opencode-go-tracker-v1.md` for the full contract.

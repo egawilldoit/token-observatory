@@ -1,6 +1,10 @@
 import * as XLSX from "xlsx";
 
 import { validatePlanInputs } from "./calculations";
+import {
+  OPENCODE_GO_WORKBOOK_SHEET,
+  OPENCODE_GO_WORKBOOK_TITLE,
+} from "./config";
 import { generateCheckpoints } from "./schedule";
 import {
   casablancaWallToInstant,
@@ -8,7 +12,6 @@ import {
   parseCasablancaDateTime,
 } from "./time";
 import type { OpenCodeGoParsedWorkbook } from "./types";
-import { FIXTURE_CHECK_TIME, FIXTURE_SHEET, FIXTURE_TITLE } from "./fixtures";
 
 export type ParseCode =
   | "missing_sheet"
@@ -89,7 +92,7 @@ function parseFraction(raw: unknown, field: string): number {
   return fail("invalid_plan", `${field} is malformed`);
 }
 
-function dateCellToMs(raw: unknown, field: string): number {
+function dateCellToMs(raw: unknown, field: string, fallbackCheckTime: string): number {
   if (raw instanceof Date) {
     const ms = raw.getTime();
     if (!Number.isFinite(ms)) fail("invalid_datetime", `${field} is an invalid date`);
@@ -108,7 +111,7 @@ function dateCellToMs(raw: unknown, field: string): number {
     if (t === "") fail("invalid_datetime", `${field} is missing`);
     try {
       if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(t)) return parseCasablancaDateTime(t);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return casablancaWallToInstant(t, FIXTURE_CHECK_TIME);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return casablancaWallToInstant(t, fallbackCheckTime);
     } catch {
       // fall through
     }
@@ -185,12 +188,12 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
     throw new OpenCodeGoParseError("missing_sheet", "malformed workbook: could not read sheets");
   }
 
-  const sheetName = (wb.SheetNames ?? []).find((n) => n.trim() === FIXTURE_SHEET);
+  const sheetName = (wb.SheetNames ?? []).find((n) => n.trim() === OPENCODE_GO_WORKBOOK_SHEET);
   if (!sheetName) {
-    fail("missing_sheet", `required sheet "${FIXTURE_SHEET}" not found`);
+    fail("missing_sheet", `required sheet "${OPENCODE_GO_WORKBOOK_SHEET}" not found`);
   }
   const ws = wb.Sheets[sheetName as string] as XLSX.WorkSheet;
-  if (!ws) fail("missing_sheet", `required sheet "${FIXTURE_SHEET}" not found`);
+  if (!ws) fail("missing_sheet", `required sheet "${OPENCODE_GO_WORKBOOK_SHEET}" not found`);
 
   const grid = XLSX.utils.sheet_to_json<unknown[]>(ws, {
     header: 1,
@@ -199,9 +202,9 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
     blankrows: false,
   }) as Grid;
 
-  const titleCell = findCell(grid, (v) => v === FIXTURE_TITLE);
+  const titleCell = findCell(grid, (v) => v === OPENCODE_GO_WORKBOOK_TITLE);
   if (!titleCell) {
-    fail("title", `required title "${FIXTURE_TITLE}" not found`);
+    fail("title", `required title "${OPENCODE_GO_WORKBOOK_TITLE}" not found`);
   }
 
   const labelValue = new Map<string, unknown>();
@@ -224,9 +227,9 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
   }
 
   const baselineUsage = parseFraction(labelValue.get("Current monthly usage"), "baseline");
-  const trackingStartMs = dateCellToMs(labelValue.get("Tracking starts"), "tracking start");
-  const resetAtMs = dateCellToMs(labelValue.get("Reset date/time"), "reset");
   const checkTime = normalizeCheckTime(labelValue.get("Daily check time"));
+  const trackingStartMs = dateCellToMs(labelValue.get("Tracking starts"), "tracking start", checkTime);
+  const resetAtMs = dateCellToMs(labelValue.get("Reset date/time"), "reset", checkTime);
   const hardLimit = parseFraction(labelValue.get("Hard monthly limit"), "hard limit");
   const safetyReserve = parseFraction(labelValue.get("Safety reserve"), "safety reserve");
   const plannedCeilingRaw = labelValue.get("Planned ceiling at reset");
@@ -281,7 +284,7 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
   const checkpoints = rawRows.map((row, i) => {
     const day = typeof row.day === "number" ? row.day : Number(String(row.day).trim());
     if (!Number.isInteger(day)) fail("schedule", `Day # row ${i + 1} is not an integer`);
-    const timestampMs = dateCellToMs(row.date, `checkpoint row ${i + 1} date`);
+    const timestampMs = dateCellToMs(row.date, `checkpoint row ${i + 1} date`, checkTime);
     const date = formatCasablancaDate(timestampMs);
     const rowCheckTime = row.check == null || (typeof row.check === "string" && row.check.trim() === "")
       ? checkTime

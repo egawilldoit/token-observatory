@@ -34,32 +34,39 @@ export function reconcileFormulas(
   const ceilingByDay = new Map(applicationCeilings.map((c) => [c.day, c.ceiling]));
 
   const warnings: OpenCodeGoFormulaWarning[] = [];
+  let mismatchCount = 0;
   const values = parsed.formulaValues ?? [];
   for (const f of values) {
     if (f.field === "plannedCeiling") {
-      if (Math.abs(f.value - applicationPlannedCeiling) > tolerance && warnings.length < MAX_FORMULA_WARNINGS) {
-        warnings.push({
-          field: "plannedCeiling",
-          workbookValue: f.value,
-          applicationValue: applicationPlannedCeiling,
-        });
+      if (Math.abs(f.value - applicationPlannedCeiling) > tolerance) {
+        mismatchCount += 1;
+        if (warnings.length < MAX_FORMULA_WARNINGS) {
+          warnings.push({
+            field: "plannedCeiling",
+            workbookValue: f.value,
+            applicationValue: applicationPlannedCeiling,
+          });
+        }
       }
     } else if (f.field === "checkpointCeiling" && f.checkpointDay != null) {
       const app = ceilingByDay.get(f.checkpointDay);
-      if (app != null && Math.abs(f.value - app) > tolerance && warnings.length < MAX_FORMULA_WARNINGS) {
-        warnings.push({
-          field: "checkpointCeiling",
-          checkpointDay: f.checkpointDay,
-          workbookValue: f.value,
-          applicationValue: app,
-        });
+      if (app != null && Math.abs(f.value - app) > tolerance) {
+        mismatchCount += 1;
+        if (warnings.length < MAX_FORMULA_WARNINGS) {
+          warnings.push({
+            field: "checkpointCeiling",
+            checkpointDay: f.checkpointDay,
+            workbookValue: f.value,
+            applicationValue: app,
+          });
+        }
       }
     }
   }
 
   return {
     formulaValuesAvailable: values.length > 0,
-    mismatchCount: warnings.length,
+    mismatchCount,
     warnings,
     applicationPlannedCeiling,
     applicationCeilings,

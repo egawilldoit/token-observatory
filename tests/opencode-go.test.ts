@@ -420,6 +420,47 @@ describe("opencode-go XLSX security preflight", () => {
     }
     assert.throws(() => preflightXlsxBuffer(patched, "tracker.xlsx"), /entry_too_large/);
   });
+
+  it("rejects stored entries whose real size disagrees with the header", () => {
+    const zip = buildMinimalZip([
+      { name: "[Content_Types].xml", data: MINIMAL_CONTENT_TYPES },
+      { name: "xl/workbook.xml", data: MINIMAL_WORKBOOK },
+      { name: "xl/data.xml", data: "short" },
+    ]);
+    const patched = Buffer.from(zip);
+    const eocd = patched.length - 22;
+    const count = patched.readUInt16LE(eocd + 10);
+    let cursor = patched.readUInt32LE(eocd + 16);
+    for (let i = 0; i < count; i += 1) {
+      const nameLen = patched.readUInt16LE(cursor + 28);
+      const extraLen = patched.readUInt16LE(cursor + 30);
+      const commentLen = patched.readUInt16LE(cursor + 32);
+      if (i === count - 1) patched.writeUInt32LE(1024, cursor + 24);
+      cursor += 46 + nameLen + extraLen + commentLen;
+    }
+    assert.throws(() => preflightXlsxBuffer(patched, "tracker.xlsx"), /malformed/);
+  });
+
+  it("caps deflated expansion even when headers lie about a small size", () => {
+    const big = Buffer.alloc(20 * 1024 * 1024, 0x61);
+    const zip = buildMinimalZip([
+      { name: "[Content_Types].xml", data: MINIMAL_CONTENT_TYPES },
+      { name: "xl/workbook.xml", data: MINIMAL_WORKBOOK },
+      { name: "xl/data.xml", data: big, method: 8 },
+    ]);
+    const patched = Buffer.from(zip);
+    const eocd = patched.length - 22;
+    const count = patched.readUInt16LE(eocd + 10);
+    let cursor = patched.readUInt32LE(eocd + 16);
+    for (let i = 0; i < count; i += 1) {
+      const nameLen = patched.readUInt16LE(cursor + 28);
+      const extraLen = patched.readUInt16LE(cursor + 30);
+      const commentLen = patched.readUInt16LE(cursor + 32);
+      if (i === count - 1) patched.writeUInt32LE(100, cursor + 24);
+      cursor += 46 + nameLen + extraLen + commentLen;
+    }
+    assert.throws(() => preflightXlsxBuffer(patched, "tracker.xlsx"), /entry_too_large/);
+  });
 });
 
 describe("opencode-go workbook parser", () => {
@@ -506,6 +547,31 @@ describe("opencode-go workbook parser", () => {
     const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
     assert.throws(() => parseOpenCodeGoWorkbook(out), /schedule/);
   });
+
+  it("resolves date-only checkpoint cells against the workbook check time", async () => {
+    const XLSX = await import("xlsx");
+    const { formatCasablancaDate } = await import("../lib/opencode-go/time.js");
+    const wb = XLSX.read(buildOpenCodeGoWorkbookBuffer({}), { type: "buffer", cellDates: true });
+    const ws = wb.Sheets["Monthly Tracker"] as Record<string, { v?: unknown; t?: string }>;
+    let replaced = 0;
+    for (const addr of Object.keys(ws)) {
+      if (addr.startsWith("!")) continue;
+      const v = ws[addr]?.v;
+      if (v instanceof Date && formatCasablancaDate(v.getTime()) === "2026-09-05") {
+        ws[addr] = { t: "s", v: "2026-09-05" };
+        replaced += 1;
+      }
+    }
+    assert.ok(replaced > 0);
+    const out = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Uint8Array);
+    const parsed = parseOpenCodeGoWorkbook(out);
+    const sep5 = parsed.checkpoints.find((c) => c.date === "2026-09-05");
+    assert.ok(sep5);
+    assert.equal(
+      sep5.timestampMs,
+      (await import("../lib/opencode-go/time.js")).casablancaWallToInstant("2026-09-05", "12:00"),
+    );
+  });
 });
 
 describe("opencode-go formula diagnostics", () => {
@@ -526,6 +592,21 @@ describe("opencode-go formula diagnostics", () => {
     const day1 = result.applicationCeilings.find((c) => c.day === 1);
     const skewed = parsed.formulaValues.find((f) => f.checkpointDay === 1);
     assert.ok(day1 && skewed && Math.abs(day1.ceiling - skewed.value) > 1e-6);
+  });
+
+  it("counts every mismatch while bounding warning details", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({}));
+    const skewed = {
+      ...parsed,
+      formulaValues: Array.from({ length: 60 }, (_, i) => ({
+        field: "checkpointCeiling",
+        checkpointDay: (i % 29) + 1,
+        value: 0.99,
+      })),
+    };
+    const result = reconcileFormulas(skewed);
+    assert.equal(result.mismatchCount, 60);
+    assert.equal(result.warnings.length, 50);
   });
 });
 
@@ -570,6 +651,22 @@ describe("opencode-go persistence migration", () => {
     assert.ok(files.includes("20260905_006_recovered_monthly_usage.sql"));
     assert.ok(files.includes("20260905_007_recovered_additive_accounting.sql"));
     assert.ok(files.includes("20260905_008_opencode_go_tracker.sql"));
+    assert.ok(files.includes("20260905_009_opencode_go_immutable_snapshots.sql"));
+  });
+
+  it("makes accepted snapshots immutable at the database level", async () => {
+    const sql = await readFile(
+      new URL("../supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(sql, /reject_opencode_go_processed_mutation/);
+    assert.match(sql, /before update or delete on public\.opencode_go_imports/);
+    assert.match(sql, /storage_path is not null/);
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    assert.doesNotMatch(executable, /daily_usage_observations|recovered_monthly_usage|process_ccusage_import/);
   });
 });
 

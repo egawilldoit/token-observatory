@@ -1,15 +1,21 @@
+import { deflateRawSync } from "node:zlib";
 import * as XLSX from "xlsx";
 
 import { checkpointCeiling } from "./calculations";
+import {
+  OPENCODE_GO_DEFAULT_CHECK_TIME,
+  OPENCODE_GO_WORKBOOK_SHEET,
+  OPENCODE_GO_WORKBOOK_TITLE,
+} from "./config";
 import { casablancaWallToInstant, localDateList } from "./time";
 
-export const FIXTURE_TITLE = "OpenCode Go — Monthly Usage Tracker";
-export const FIXTURE_SHEET = "Monthly Tracker";
+export const FIXTURE_TITLE = OPENCODE_GO_WORKBOOK_TITLE;
+export const FIXTURE_SHEET = OPENCODE_GO_WORKBOOK_SHEET;
 
 export const FIXTURE_BASELINE = 0.048;
 export const FIXTURE_TRACKING_START = "2026-08-30 22:29";
 export const FIXTURE_RESET = "2026-09-29 11:29";
-export const FIXTURE_CHECK_TIME = "12:00";
+export const FIXTURE_CHECK_TIME = OPENCODE_GO_DEFAULT_CHECK_TIME;
 export const FIXTURE_HARD_LIMIT = 1.0;
 export const FIXTURE_RESERVE = 0.0;
 
@@ -131,44 +137,53 @@ function crc32(data: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-export function buildMinimalZip(entries: { name: string; data: Uint8Array | string }[]): Buffer {
+export type MinimalZipEntry = {
+  name: string;
+  data: Uint8Array | string;
+  /** ZIP compression method: 0 = stored (default), 8 = deflated. */
+  method?: 0 | 8;
+};
+
+export function buildMinimalZip(entries: MinimalZipEntry[]): Buffer {
   const enc = new TextEncoder();
   const parts: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
   for (const e of entries) {
     const nameBytes = enc.encode(e.name);
-    const dataBytes = typeof e.data === "string" ? enc.encode(e.data) : e.data;
-    const crc = crc32(dataBytes);
+    const rawBytes = typeof e.data === "string" ? enc.encode(e.data) : e.data;
+    const method = e.method ?? 0;
+    const storedBytes = method === 8 ? deflateRawSync(rawBytes) : Buffer.from(rawBytes);
+    const crc = crc32(rawBytes);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
     local.writeUInt16LE(0, 6);
-    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(method, 8);
     local.writeUInt16LE(0x5a5a, 10);
     local.writeUInt16LE(0x4a4a, 12);
     local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(dataBytes.length, 18);
-    local.writeUInt32LE(dataBytes.length, 22);
+    local.writeUInt32LE(storedBytes.length, 18);
+    local.writeUInt32LE(rawBytes.length, 22);
     local.writeUInt16LE(nameBytes.length, 26);
     local.writeUInt16LE(0, 28);
-    parts.push(local, Buffer.from(nameBytes), Buffer.from(dataBytes));
+    parts.push(local, Buffer.from(nameBytes), Buffer.from(storedBytes));
     const cen = Buffer.alloc(46);
     cen.writeUInt32LE(0x02014b50, 0);
     cen.writeUInt16LE(20, 4);
     cen.writeUInt16LE(20, 6);
     cen.writeUInt16LE(0, 8);
-    cen.writeUInt16LE(0, 10);
+    cen.writeUInt16LE(method, 10);
     cen.writeUInt16LE(0x5a5a, 12);
     cen.writeUInt16LE(0x4a4a, 14);
     cen.writeUInt32LE(crc, 16);
-    cen.writeUInt32LE(dataBytes.length, 20);
-    cen.writeUInt32LE(dataBytes.length, 24);
+    cen.writeUInt32LE(storedBytes.length, 20);
+    cen.writeUInt32LE(rawBytes.length, 24);
     cen.writeUInt16LE(nameBytes.length, 28);
     for (let i = 30; i < 46; i += 1) cen.writeUInt8(0, i);
     cen.writeUInt32LE(offset, 42);
     central.push(cen, Buffer.from(nameBytes));
-    offset += 30 + nameBytes.length + dataBytes.length;
+    offset += 30 + nameBytes.length + storedBytes.length;
   }
   const centralStart = offset;
   const centralSize = central.reduce((n, b) => n + b.length, 0);

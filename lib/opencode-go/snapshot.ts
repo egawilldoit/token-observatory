@@ -1,5 +1,5 @@
-import { checkpointCeiling, plannedCeiling } from "./calculations";
-import { reconcileFormulas } from "./formula";
+import { checkpointCeiling, latestRecordedActual, plannedCeiling } from "./calculations";
+import { MAX_FORMULA_WARNINGS, reconcileFormulas } from "./formula";
 import type { OpenCodeGoParsedWorkbook } from "./types";
 
 export type StoredCheckpoint = {
@@ -61,22 +61,15 @@ export function buildStoredSnapshot(parsed: OpenCodeGoParsedWorkbook): StoredSna
     actual: c.actual,
   }));
 
-  let latest: StoredSnapshot["latestRecordedActual"] = {
-    value: parsed.baselineUsage,
-    source: "baseline",
-    checkpointDate: null,
-    checkpointTimestamp: null,
-  };
-  for (const c of checkpoints) {
-    if (c.actual != null) {
-      latest = {
-        value: c.actual,
-        source: "checkpoint",
-        checkpointDate: c.date,
-        checkpointTimestamp: c.timestamp,
-      };
-    }
-  }
+  const latest = latestRecordedActual(
+    checkpoints.map((c) => ({
+      timestampMs: Date.parse(c.timestamp),
+      date: c.date,
+      timestamp: c.timestamp,
+      actual: c.actual,
+    })),
+    parsed.baselineUsage,
+  );
 
   return {
     timezone: "Africa/Casablanca",
@@ -92,7 +85,7 @@ export function buildStoredSnapshot(parsed: OpenCodeGoParsedWorkbook): StoredSna
     workbookDiagnostics: {
       formulaValuesAvailable: reconciliation.formulaValuesAvailable,
       formulaMismatchCount: reconciliation.mismatchCount,
-      formulaWarnings: reconciliation.warnings.slice(0, 50),
+      formulaWarnings: reconciliation.warnings.slice(0, MAX_FORMULA_WARNINGS),
     },
   };
 }

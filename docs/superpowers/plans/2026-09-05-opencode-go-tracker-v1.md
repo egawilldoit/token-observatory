@@ -134,7 +134,7 @@ Never leak `error.message` from Supabase/parser verbatim beyond safe allowlist; 
 
 - Reuse `isCrossOriginRequest`, `requestExceedsBytes`, `decodeUtf8Strict`-style strictness, `getObservatoryAccess`, `createAdminClient`, `safeFilename`, SHA-256.
 - XLSX preflight before `xlsx` parse; traversal (`..`, absolute, drive-letter, backslash-escape), encryption (`EncryptionInfo`, `EncryptedPackage`), VBA/macro parts + `vbaProject.bin` + `xl/vbaProjectSignature*` + content-type overrides, entry/size bombs.
-- Deployment limits: Next/Vercel — App Router `formData()` buffers in memory; Vercel serverless request payload cap is ~4.5 MB on Hobby (Pro larger). Code enforces spec targets (8 MiB file / 10 MiB request) AND documents effective production ceiling in `lib/opencode-go/config.ts` comment + README + PR body: if Vercel Hobby, files > ~4.5 MB will be rejected upstream before app 413. Do not advertise 8 MiB as guaranteed on Hobby.
+- Deployment limits: Next/Vercel — App Router `formData()` buffers in memory; Vercel serverless request payloads are capped at roughly 4.5 MB, so the EFFECTIVE production ceiling is that platform cap, not the application constants. Code enforces the spec targets (8 MiB file / 10 MiB request) as the application-side bound AND documents the lower effective production ceiling in `lib/opencode-go/config.ts` comment + README + PR body: files above ~4.5 MB are rejected upstream with `FUNCTION_PAYLOAD_TOO_LARGE` before app code runs, so operators must treat ~4.5 MB as the real upload limit. Do not advertise 8 MiB as reachable in production.
 - `xlsx@0.18.5` exact pin, justification + lockfile verification (`npm audit signatures`), `export const runtime = "nodejs"`.
 
 ## 9. Production verification

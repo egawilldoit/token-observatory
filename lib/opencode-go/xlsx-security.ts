@@ -151,7 +151,12 @@ function entryDataSlice(buffer: Buffer, entry: ZipEntry): Buffer {
 }
 
 function decompressedLength(buffer: Buffer, entry: ZipEntry): number {
-  if (entry.method === 0) return entry.uncompressedSize;
+  // Stored entries must match their declared size exactly; archives using
+  // data descriptors (zeroed header sizes) are rejected as malformed rather
+  // than guessed. This keeps the size accounting below truthful.
+  if (entry.method === 0) {
+    return entryDataSlice(buffer, entry).length;
+  }
   if (entry.method !== 8) {
     throw new XlsxPreflightError("unsupported_structure", `unsupported compression method ${entry.method}`);
   }
@@ -161,8 +166,16 @@ function decompressedLength(buffer: Buffer, entry: ZipEntry): number {
   }
   let inflated: Buffer;
   try {
-    inflated = inflateRawSync(slice);
-  } catch {
+    inflated = inflateRawSync(slice, {
+      maxOutputLength: OPENCODE_GO_MAX_SINGLE_UNCOMPRESSED_BYTES + 1,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE"
+    ) {
+      throw new XlsxPreflightError("entry_too_large", `decompressed entry too large: ${entry.name}`);
+    }
     throw new XlsxPreflightError("malformed", `could not inflate ${entry.name}`);
   }
   return inflated.length;
