@@ -11,6 +11,49 @@ import {
   OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
 } from "../lib/opencode-go/xlsx-security.js";
 
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function excelWallClockSerial(
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+): number {
+  return (
+    Date.UTC(year, month - 1, day, hour, minute, 0, 0) - EXCEL_EPOCH_UTC_MS
+  ) / 86_400_000;
+}
+
+function buildExcelWallClockWorkbook(): Buffer {
+  const input = buildOpenCodeGoWorkbookBuffer();
+  const wb = XLSX.read(input, { type: "buffer", cellDates: false });
+  const ws = wb.Sheets["Monthly Tracker"];
+  assert.ok(ws);
+
+  // Excel stores these values as timezone-less wall-clock serials. Mirror the
+  // actual user workbook rather than writing JavaScript instants into cells.
+  ws.B4 = { t: "n", v: excelWallClockSerial(2026, 8, 30, 22, 29), z: "yyyy-mm-dd hh:mm" };
+  ws.B6 = { t: "n", v: 0.5, z: "hh:mm" };
+  ws.B7 = { t: "n", v: excelWallClockSerial(2026, 9, 29, 11, 29), z: "yyyy-mm-dd hh:mm" };
+
+  const start = new Date(Date.UTC(2026, 7, 31));
+  for (let i = 0; i < 29; i += 1) {
+    const d = new Date(start.getTime() + i * 86_400_000);
+    const row = 16 + i;
+    ws[`B${row}`] = {
+      t: "n",
+      v: excelWallClockSerial(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()),
+      z: "yyyy-mm-dd",
+    };
+    ws[`C${row}`] = { t: "n", v: 0.5, z: "hh:mm" };
+  }
+
+  return Buffer.from(
+    XLSX.write(wb, { type: "buffer", bookType: "xlsx", compression: true }) as Uint8Array,
+  );
+}
+
 describe("OpenCode Go review hardening", () => {
   it("keeps deployed upload limits below Vercel's 4.5 MB request cap", () => {
     assert.equal(OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES, 4 * 1024 * 1024);
@@ -55,6 +98,16 @@ describe("OpenCode Go review hardening", () => {
     assert.equal(parsed.safetyReserve, 0);
     assert.equal(parsed.plannedCeiling, null);
     assert.equal(parsed.checkpoints.length, 29);
+  });
+
+  it("treats Excel date cells as Casablanca wall-clock values", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildExcelWallClockWorkbook());
+
+    assert.equal(new Date(parsed.trackingStartMs).toISOString(), "2026-08-30T21:29:00.000Z");
+    assert.equal(new Date(parsed.resetAtMs).toISOString(), "2026-09-29T10:29:00.000Z");
+    assert.equal(parsed.checkpoints.length, 29);
+    assert.equal(parsed.checkpoints[0]?.date, "2026-08-31");
+    assert.equal(parsed.checkpoints[28]?.date, "2026-09-28");
   });
 
   it("keeps the private Storage bucket limit aligned with the deployed file limit", async () => {
