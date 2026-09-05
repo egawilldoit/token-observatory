@@ -7,21 +7,21 @@ import { inflateRawSync } from "node:zlib";
  * workbook parsing. Dependency-free: parses the ZIP central directory
  * manually and uses node:zlib only to bound decompressed sizes.
  *
- * Target limits (spec §19):
- * - max XLSX file size:             8 MiB
- * - max multipart request size:    10 MiB (enforced in the route via Content-Length + File.size)
+ * Effective V1 upload limits:
+ * - max XLSX file size:             4 MiB
+ * - max multipart request size:     4.25 MiB
  * - max ZIP entries:               256
  * - max single uncompressed entry: 16 MiB
  * - max total uncompressed size:   32 MiB
  *
- * Deployment note: Vercel serverless request payloads cap around ~4.5 MB on
- * Hobby (higher on Pro). The application enforces the spec targets above, but
- * the EFFECTIVE production ceiling on Hobby is the lower Vercel platform cap:
- * files above ~4.5 MB are rejected upstream before application code runs.
- * Do not advertise 8 MiB as guaranteed on Hobby.
+ * The original product target allowed 8 MiB files / 10 MiB multipart bodies,
+ * but Vercel Functions cap request payloads at 4.5 MB before application code
+ * runs. Keep the application request bound below that upstream cap and reserve
+ * 256 KiB for multipart framing so the documented file size is actually
+ * reachable in production.
  */
-export const OPENCODE_GO_MAX_FILE_BYTES = 8 * 1024 * 1024;
-export const OPENCODE_GO_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+export const OPENCODE_GO_MAX_FILE_BYTES = 4 * 1024 * 1024;
+export const OPENCODE_GO_MAX_REQUEST_BYTES = 4 * 1024 * 1024 + 256 * 1024;
 export const OPENCODE_GO_MAX_ZIP_ENTRIES = 256;
 export const OPENCODE_GO_MAX_SINGLE_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
 export const OPENCODE_GO_MAX_TOTAL_UNCOMPRESSED_BYTES = 32 * 1024 * 1024;
