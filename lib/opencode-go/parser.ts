@@ -50,6 +50,19 @@ const REQUIRED_LABELS = [
   "Daily checkpoint",
 ] as const;
 
+// These are the authoritative workbook inputs. The remaining required labels
+// are derived/formula fields: their labels must exist, but an XLSX file is
+// still valid when Excel did not persist a cached formula result. Application
+// calculations remain authoritative in that case.
+const REQUIRED_SOURCE_VALUE_LABELS = new Set<string>([
+  "Current monthly usage",
+  "Tracking starts",
+  "Daily check time",
+  "Reset date/time",
+  "Hard monthly limit",
+  "Safety reserve",
+]);
+
 const REQUIRED_HEADERS = [
   "Day #",
   "Date",
@@ -250,8 +263,8 @@ export function parseOpenCodeGoWorkbook(buffer: Buffer): OpenCodeGoParsedWorkboo
         break;
       }
     }
-    if (label !== "Daily checkpoint" && (value == null || cellString(value) === null) && typeof value !== "number" && !(value instanceof Date)) {
-      if (value == null) fail("missing_label", `value for label "${label}" is missing`);
+    if (REQUIRED_SOURCE_VALUE_LABELS.has(label) && value == null) {
+      fail("missing_label", `value for label "${label}" is missing`);
     }
     labelValue.set(label, value);
   }
