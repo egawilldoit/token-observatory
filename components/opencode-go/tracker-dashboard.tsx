@@ -66,7 +66,6 @@ export function TrackerDashboard({
   }
 
   const stale = view.status === "UPDATE_DUE";
-  const fresh = !stale && !view.preFirstCheckpoint && view.status !== "RESET_REQUIRED" && view.status !== "LIMIT_EXCEEDED";
   const usageLabel = stale ? "Last recorded usage" : "Recorded usage";
   const usageHint =
     view.latestRecorded.source === "baseline"
@@ -76,15 +75,27 @@ export function TrackerDashboard({
         : undefined;
   const ceilingLabel = stale ? "Today's planned ceiling" : view.preFirstCheckpoint ? "Next planned ceiling" : "Planned ceiling";
   const ceilingValue = view.requiredCeiling ?? view.checkpoints[0]?.ceiling ?? view.cycle.plannedCeiling;
-  const headroomText =
+  const isOverPace = view.headroom != null && view.headroom < 0;
+  const headroomLabel = isOverPace ? "Over target" : "Headroom";
+  const headroomValue =
     view.headroom == null
       ? "—"
-      : view.headroom >= 0
-        ? `${formatPoints(view.headroom)} headroom`
-        : `${formatPoints(view.headroom)} over pace`;
+      : isOverPace
+        ? formatPoints(Math.abs(view.headroom))
+        : formatPoints(view.headroom);
+  const headroomHint =
+    view.headroom == null
+      ? stale
+        ? "No verified current reading"
+        : view.preFirstCheckpoint
+          ? "No checkpoint due yet"
+          : undefined
+      : isOverPace
+        ? `${formatPoints(Math.abs(view.headroom))} over pace`
+        : `${formatPoints(view.headroom)} headroom`;
   const paceMax = Math.max(view.cycle.plannedCeiling, view.latestRecorded.value, 0.0001);
   const actualPct = Math.min(100, (view.latestRecorded.value / paceMax) * 100);
-  const targetPct = Math.min(100, ((view.requiredCeiling ?? view.cycle.plannedCeiling) / paceMax) * 100);
+  const targetPct = Math.min(100, (ceilingValue / paceMax) * 100);
 
   return (
     <>
@@ -114,6 +125,7 @@ export function TrackerDashboard({
           status={view.status}
           preFirstCheckpoint={view.preFirstCheckpoint}
           requiredDate={view.requiredDate}
+          checkTime={view.cycle.checkTime}
         />
       </div>
 
@@ -125,9 +137,9 @@ export function TrackerDashboard({
           hint={view.requiredDate ? `${view.requiredDate} checkpoint` : undefined}
         />
         <Metric
-          label={fresh || view.status === "NEAR_LIMIT" || view.status === "OVER_PACE" ? "Headroom" : "Headroom"}
-          value={view.headroom == null ? "—" : formatPoints(view.headroom)}
-          hint={view.headroom == null ? (stale ? "No verified Sep reading" : view.preFirstCheckpoint ? "No checkpoint due yet" : undefined) : headroomText}
+          label={headroomLabel}
+          value={headroomValue}
+          hint={headroomHint}
         />
         <Metric
           label="Budget remaining"
@@ -163,7 +175,7 @@ export function TrackerDashboard({
         <span className="sr-only">
           {stale ? "Last recorded usage " : "Recorded usage "}
           {formatPercent(view.latestRecorded.value)} against a planned ceiling of{" "}
-          {formatPercent(view.requiredCeiling ?? view.cycle.plannedCeiling)}.
+          {formatPercent(ceilingValue)}.
         </span>
       </div>
 
