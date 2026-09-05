@@ -8,6 +8,7 @@ import { SetupRequired } from "@/components/telemetry/setup-required";
 import { hasObservatoryAccess } from "@/lib/auth/require-user";
 import { getLatestRecoveryEvidence } from "@/lib/recovery/queries";
 import { isTelemetryConfigured } from "@/lib/supabase/admin";
+import { getKnownUsageTotals } from "@/lib/telemetry/known-usage";
 import {
   getCurrentDailyModelUsage,
   getCurrentDailyUsage,
@@ -28,6 +29,7 @@ async function DashboardRuntime() {
     recentImports,
     collectionHints,
     recoveredEvidence,
+    knownUsageTotals,
   ] = await Promise.all([
     getCurrentDailyUsage(),
     getCurrentDailyModelUsage(),
@@ -35,6 +37,7 @@ async function DashboardRuntime() {
     getRecentImports(8),
     getMachineCollectionHints(),
     getLatestRecoveryEvidence(),
+    getKnownUsageTotals(),
   ]);
 
   return (
@@ -45,6 +48,7 @@ async function DashboardRuntime() {
       recentImports={recentImports}
       collectionHints={collectionHints}
       recoveredEvidence={recoveredEvidence}
+      knownUsageTotals={knownUsageTotals}
     />
   );
 }

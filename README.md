@@ -61,6 +61,7 @@ supabase/migrations/20260830_003_model_telemetry.sql
 supabase/migrations/20260830_004_cross_machine_session_dedupe.sql
 supabase/migrations/20260830_005_cross_machine_dedupe_indexes.sql
 supabase/migrations/20260905_006_recovered_monthly_usage.sql
+supabase/migrations/20260905_007_recovered_additive_accounting.sql
 ```
 
 The migrations create:
@@ -93,23 +94,25 @@ request/file metadata before parsing.
 
 ## Recovered monthly evidence
 
-The original Windows machines that produced the May–August 2026 `ccusage
-monthly` reports are permanently lost. The terminal output is therefore the
-highest surviving granularity: exact monthly aggregates by agent. No daily,
-session, or per-model token history was reconstructed.
+The Windows PC that produced the May–August 2026 `ccusage monthly` report is
+permanently lost. The terminal output is therefore the highest surviving
+granularity: exact monthly aggregates by agent. No daily, session, or per-model
+token history was reconstructed.
 
-The two surviving reports are stored as one recovery set with
-`source_machine_count = 2`, `suspected_mirror = true`, and
-`accounting_mode = evidence_only_non_additive`. This records two provenance
-sources without counting a possible mirrored history twice. Recovery rows live
-only in `recovered_usage_sets` and `recovered_monthly_usage`; they are not
-inserted into canonical daily, model, session, import, or cross-machine dedupe
-tables and are never silently added to dashboard totals.
+The recovered report is stored as one additive recovery set with
+`source_machine_count = 1`, `suspected_mirror = false`, and
+`accounting_mode = additive_recovered`. It belongs to a different physical
+machine than the VM's canonical import. Recovery rows live only in
+`recovered_usage_sets` and `recovered_monthly_usage`; they are not inserted
+into canonical daily, model, session, import, or cross-machine dedupe tables.
+The server-side known-usage aggregate adds this monthly total to canonical
+telemetry without redefining canonical views.
 
-The preserved set totals 9,666,290,902 tokens. Its reported $1,386.19 cost is
-informational and potentially incomplete because `laguna-s-2.1-free` and
-`ox-alpha-free` had missing pricing warnings. The raw terminal reports are
-stored with the recovery set as immutable surviving evidence.
+The preserved set totals 9,666,290,902 tokens. Together with the VM's canonical
+8,204,457,186 tokens, Total Known Usage is 17,870,748,088 tokens. Its reported
+$1,386.19 cost is informational and potentially incomplete because
+`laguna-s-2.1-free` and `ox-alpha-free` had missing pricing warnings. The raw
+terminal report is stored with the recovery set as surviving evidence.
 
 Direct dependency versions and CI actions are pinned to reviewed versions/commit
 SHAs. Next.js responses disable the powered-by header and apply baseline frame,
