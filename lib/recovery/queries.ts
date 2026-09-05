@@ -8,7 +8,7 @@ import type {
   RecoveredUsageSetSummary,
 } from "./types";
 
-const RECOVERED_SET_ID = "lost-windows-history-2026-05-08";
+export const RECOVERED_SET_ID = "lost-windows-history-2026-05-08";
 const RECOVERED_SET_SUMMARY_COLUMNS =
   "id, description, source_type, source_machine_count, suspected_mirror, accounting_mode, confidence, granularity, total_input_tokens, total_output_tokens, total_cache_creation_tokens, total_cache_read_tokens, total_tokens, reported_cost_usd, pricing_complete, warnings, created_at";
 
@@ -49,7 +49,7 @@ export async function getLatestRecoveryEvidence(): Promise<RecoveredUsageEvidenc
   const { data: sets, error: setsError } = await supabase
     .from("recovered_usage_sets")
     .select(RECOVERED_SET_SUMMARY_COLUMNS)
-    .order("created_at", { ascending: false })
+    .eq("id", RECOVERED_SET_ID)
     .limit(1);
 
   if (setsError) throw setsError;

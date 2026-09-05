@@ -105,11 +105,14 @@ The recovered report is stored as one additive recovery set with
 machine than the VM's canonical import. Recovery rows live only in
 `recovered_usage_sets` and `recovered_monthly_usage`; they are not inserted
 into canonical daily, model, session, import, or cross-machine dedupe tables.
-The server-side known-usage aggregate adds this monthly total to canonical
-telemetry without redefining canonical views.
+The dashboard's server-side unified analytics projection adds this monthly
+total to canonical telemetry without redefining canonical views. It merges
+machine, month, agent, token-component, and reported-cost dimensions; it keeps
+day, week, session, and per-model token attribution unavailable for recovered
+history.
 
 The preserved set totals 9,666,290,902 tokens. Together with the VM's canonical
-8,204,457,186 tokens, Total Known Usage is 17,870,748,088 tokens. Its reported
+8,204,457,186 tokens, the unified dashboard total is 17,870,748,088 tokens. Its reported
 $1,386.19 cost is informational and potentially incomplete because
 `laguna-s-2.1-free` and `ox-alpha-free` had missing pricing warnings. The raw
 terminal report is stored with the recovery set as surviving evidence.

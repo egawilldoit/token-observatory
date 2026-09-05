@@ -196,16 +196,16 @@ Recovery is a separate evidence domain:
   `source_machine_count = 1`, `suspected_mirror = false`, and
   `accounting_mode = additive_recovered`. It is distinct from the VM's
   canonical import.
-- The recovered 9,666,290,902 tokens are included in the server-side Total
-  Known Usage aggregate alongside the canonical 8,204,457,186 tokens. They
-  remain outside canonical daily/model/session/import views and
-  cross-machine dedupe. No daily or session rows are fabricated.
+- The recovered 9,666,290,902 tokens are included in the server-side unified
+  analytics projection alongside the canonical 8,204,457,186 tokens. They
+  remain outside canonical daily/model/session/import views and cross-machine
+  dedupe. No daily or session rows are fabricated.
 - Reported cost ($1,386.19) remains informational and incomplete: ccusage
   warned that `laguna-s-2.1-free` and `ox-alpha-free` had no pricing.
 
-The dashboard labels this archive as **Recovered monthly usage**, shows it as
-an additive component of **Total Known Usage**, and keeps it visually separate
-from canonical telemetry. The server-only recovery and known-usage query
-layers read the protected tables with the same service-role boundary as the
-canonical telemetry queries. Daily charts remain canonical; the recovered
-monthly series is shown separately.
+The dashboard reads canonical detailed rows and recovered monthly rows through
+one projection layer. Its default monthly chart, agent share, machine share,
+component cards, and reported cost use the merged scope. Day and week controls
+remain available only when recovered monthly-only history is excluded; model
+filters show attributable canonical rows and explain why recovered tokens are
+not assigned to named models.

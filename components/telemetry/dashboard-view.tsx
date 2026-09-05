@@ -9,21 +9,26 @@ import {
   Cpu,
   Database,
   Gauge,
+  Info,
   Layers3,
   Loader2,
   Sigma,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { RecoveredHistoryCard } from "@/components/telemetry/recovered-history-card";
-import { KnownUsageSummary } from "@/components/telemetry/known-usage-summary";
+import {
+  ALL_MACHINES,
+  LOST_WINDOWS_PC_MACHINE_ID,
+  LOST_WINDOWS_PC_MACHINE_NAME,
+  selectUnifiedUsage,
+  summarizeUnifiedUsage,
+} from "@/lib/telemetry/unified-usage";
 import type {
-  CurrentDailyModelUsageRow,
-  CurrentDailyUsageRow,
-} from "@/lib/ccusage/types";
-import type { RecoveredUsageEvidence } from "@/lib/recovery/types";
-import type { KnownUsageTotals } from "@/lib/telemetry/known-usage-math";
+  UnifiedModelUsageRow,
+  UnifiedUsageProjection,
+  UnifiedUsageSelection,
+} from "@/lib/telemetry/unified-usage";
 import type {
   ImportRow,
   MachineCollectionHint,
@@ -33,17 +38,18 @@ import type {
 type Granularity = "day" | "week" | "month";
 type RangeKey = "all" | "7d" | "30d" | "90d";
 
-type TokenRow = {
-  machine_id: string;
+type ChartRow = {
+  period: string;
+  machineId: string;
   agent: string;
-  usage_date: string;
-  input_tokens: number;
-  output_tokens: number;
-  cache_read_tokens: number;
-  cache_creation_tokens: number;
-  reported_total_tokens: number;
-  accounting_delta_tokens: number;
-  reported_cost_usd: number | null;
+  sourceKind: "canonical" | "recovered";
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+  accountingDeltaTokens: number;
+  reportedCostUsd: number | null;
 };
 
 function compact(value: number) {
@@ -111,6 +117,14 @@ function formatPeriodLabel(value: string, granularity: Granularity) {
   }).format(new Date(value + "T12:00:00Z"));
 }
 
+function weekStart(value: string) {
+  const date = new Date(value + "T12:00:00Z");
+  const day = date.getUTCDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setUTCDate(date.getUTCDate() + mondayOffset);
+  return date.toISOString().slice(0, 10);
+}
+
 function niceCeiling(value: number) {
   if (value <= 0) return 1;
   const power = 10 ** Math.floor(Math.log10(value));
@@ -118,40 +132,6 @@ function niceCeiling(value: number) {
   const nice =
     fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
   return nice * power;
-}
-
-function summarize(rows: TokenRow[]) {
-  return rows.reduce(
-    (acc, row) => {
-      acc.total += row.reported_total_tokens;
-      acc.input += row.input_tokens;
-      acc.output += row.output_tokens;
-      acc.cache += row.cache_read_tokens;
-      acc.cacheCreation += row.cache_creation_tokens;
-      acc.delta += row.accounting_delta_tokens;
-      if (row.reported_cost_usd !== null) {
-        acc.cost += row.reported_cost_usd;
-        acc.costRows += 1;
-      }
-      return acc;
-    },
-    {
-      total: 0,
-      input: 0,
-      output: 0,
-      cache: 0,
-      cacheCreation: 0,
-      delta: 0,
-      cost: 0,
-      costRows: 0,
-    },
-  );
-}
-
-function subtractDays(value: string, days: number) {
-  const date = new Date(value + "T12:00:00Z");
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString().slice(0, 10);
 }
 
 function Metric({
@@ -224,180 +204,309 @@ const agentBarClasses = [
   "bg-emerald-500",
 ];
 
+function toChartRows(
+  selection: Extract<UnifiedUsageSelection, { status: "ready" }>,
+  granularity: Granularity,
+): ChartRow[] {
+  if (granularity === "month") {
+    return selection.monthlyRows.map((row) => ({
+      period: row.month,
+      machineId: row.machineId,
+      agent: row.agent,
+      sourceKind: row.sourceKind,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+      cacheCreationTokens: row.cacheCreationTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      totalTokens: row.totalTokens,
+      accountingDeltaTokens: row.accountingDeltaTokens,
+      reportedCostUsd: row.reportedCostUsd,
+    }));
+  }
+
+  const dailyRows = selection.dailyRows.map((row) => ({
+    period: row.usageDate,
+    machineId: row.machineId,
+    agent: row.agent,
+    sourceKind: row.sourceKind,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheCreationTokens: row.cacheCreationTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    totalTokens: row.totalTokens,
+    accountingDeltaTokens: row.accountingDeltaTokens,
+    reportedCostUsd: row.reportedCostUsd,
+  }));
+
+  if (granularity === "day") return dailyRows;
+
+  const values = new Map<string, ChartRow>();
+  for (const row of dailyRows) {
+    const period = weekStart(row.period);
+    const key = [period, row.machineId, row.agent].join("|");
+    const current = values.get(key);
+    if (!current) {
+      values.set(key, { ...row, period });
+      continue;
+    }
+    values.set(key, {
+      ...current,
+      inputTokens: current.inputTokens + row.inputTokens,
+      outputTokens: current.outputTokens + row.outputTokens,
+      cacheCreationTokens:
+        current.cacheCreationTokens + row.cacheCreationTokens,
+      cacheReadTokens: current.cacheReadTokens + row.cacheReadTokens,
+      totalTokens: current.totalTokens + row.totalTokens,
+      accountingDeltaTokens:
+        current.accountingDeltaTokens + row.accountingDeltaTokens,
+      reportedCostUsd:
+        current.reportedCostUsd === null || row.reportedCostUsd === null
+          ? current.reportedCostUsd ?? row.reportedCostUsd
+          : current.reportedCostUsd + row.reportedCostUsd,
+    });
+  }
+  return [...values.values()].sort((a, b) => a.period.localeCompare(b.period));
+}
+
+type ModelSummary = {
+  key: string;
+  label: string;
+  kind: UnifiedModelUsageRow["kind"];
+  total: number;
+  input: number;
+  output: number;
+  cache: number;
+  cacheCreation: number;
+  cost: number;
+  costRows: number;
+  agents: Set<string>;
+  periods: Set<string>;
+  knownModels: string[];
+};
+
+function summarizeModelRows(rows: UnifiedModelUsageRow[]) {
+  const values = new Map<string, ModelSummary>();
+
+  for (const row of rows) {
+    const key =
+      row.kind === "canonical-attributed"
+        ? `canonical:${row.model}`
+        : row.kind === "canonical-unattributed"
+          ? `canonical-unattributed:${row.machineId}:${row.agent}`
+          : `recovered:${row.agent}:${row.month}`;
+    const label =
+      row.kind === "canonical-attributed"
+        ? row.model
+        : row.kind === "canonical-unattributed"
+          ? `Canonical / ${row.agent} / model attribution unavailable`
+          : `Recovered / ${row.agent} / ${row.month}`;
+    const current = values.get(key) ?? {
+      key,
+      label,
+      kind: row.kind,
+      total: 0,
+      input: 0,
+      output: 0,
+      cache: 0,
+      cacheCreation: 0,
+      cost: 0,
+      costRows: 0,
+      agents: new Set<string>(),
+      periods: new Set<string>(),
+      knownModels: [],
+    };
+    current.total += row.totalTokens;
+    current.input += row.inputTokens;
+    current.output += row.outputTokens;
+    current.cache += row.cacheReadTokens;
+    current.cacheCreation += row.cacheCreationTokens;
+    if (row.reportedCostUsd !== null) {
+      current.cost += row.reportedCostUsd;
+      current.costRows += 1;
+    }
+    current.agents.add(row.agent);
+    current.periods.add(
+      row.kind === "canonical-attributed"
+        ? row.usageDate
+        : row.kind === "canonical-unattributed"
+          ? row.usageDate
+          : row.month,
+    );
+    if (row.kind === "recovered-unattributed") {
+      current.knownModels = [...row.knownModels];
+    }
+    values.set(key, current);
+  }
+
+  return [...values.values()].sort((a, b) => b.total - a.total);
+}
+
 export function DashboardView({
-  rows,
-  modelRows,
+  projection,
   machines,
   recentImports,
   collectionHints,
-  recoveredEvidence,
-  knownUsageTotals,
 }: {
-  rows: CurrentDailyUsageRow[];
-  modelRows: CurrentDailyModelUsageRow[];
+  projection: UnifiedUsageProjection;
   machines: MachineRow[];
   recentImports: ImportRow[];
   collectionHints: MachineCollectionHint[];
-  recoveredEvidence: RecoveredUsageEvidence | null;
-  knownUsageTotals: KnownUsageTotals;
 }) {
   const router = useRouter();
-  const [machine, setMachine] = useState("all");
+  const [machine, setMachine] = useState(ALL_MACHINES);
   const [agent, setAgent] = useState("all");
   const [model, setModel] = useState("all");
   const [range, setRange] = useState<RangeKey>("all");
-  const [granularity, setGranularity] = useState<Granularity>("day");
+  const [granularity, setGranularity] = useState<Granularity>("month");
   const [copied, setCopied] = useState(false);
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
 
-  const latestUsageDate = useMemo(
-    () => [...rows.map((row) => row.usage_date)].sort().at(-1) ?? null,
-    [rows],
-  );
-
-  const rangeStart = useMemo(() => {
-    if (!latestUsageDate || range === "all") return null;
-    const days = range === "7d" ? 6 : range === "30d" ? 29 : 89;
-    return subtractDays(latestUsageDate, days);
-  }, [latestUsageDate, range]);
-
   const agents = useMemo(
-    () => [...new Set(rows.map((row) => row.agent))].sort(),
-    [rows],
-  );
-
-  const scopedAgentRows = useMemo(
     () =>
-      rows.filter(
-        (row) =>
-          (machine === "all"
-            ? !row.global_duplicate
-            : row.machine_id === machine) &&
-          (agent === "all" || row.agent === agent) &&
-          (!rangeStart || row.usage_date >= rangeStart),
-      ),
-    [agent, machine, rangeStart, rows],
+      [...new Set(
+        projection.monthlyRows
+          .map((row) => row.agent)
+          .filter((item) => item !== "All"),
+      )].sort(),
+    [projection.monthlyRows],
   );
 
   const models = useMemo(
     () =>
-      [
-        ...new Set(
-          modelRows
-            .filter(
-              (row) =>
-                (machine === "all"
-                  ? !row.global_duplicate
-                  : row.machine_id === machine) &&
-                (agent === "all" || row.agent === agent) &&
-                (!rangeStart || row.usage_date >= rangeStart),
-            )
-            .map((row) => row.model),
-        ),
-      ].sort(),
-    [agent, machine, modelRows, rangeStart],
+      [...new Set(
+        projection.modelRows
+          .filter(
+            (row): row is Extract<
+              UnifiedModelUsageRow,
+              { kind: "canonical-attributed" }
+            > =>
+              row.kind === "canonical-attributed" &&
+              (machine === ALL_MACHINES || row.machineId === machine) &&
+              (agent === "all" || row.agent === agent),
+          )
+          .map((row) => row.model),
+      )].sort(),
+    [agent, machine, projection.modelRows],
   );
 
-  const scopedModelRows = useMemo(
+  const requestedSelection = useMemo(
     () =>
-      modelRows.filter(
-        (row) =>
-          (machine === "all"
-            ? !row.global_duplicate
-            : row.machine_id === machine) &&
-          (agent === "all" || row.agent === agent) &&
-          (model === "all" || row.model === model) &&
-          (!rangeStart || row.usage_date >= rangeStart),
-      ),
-    [agent, machine, model, modelRows, rangeStart],
+      selectUnifiedUsage(projection, {
+        machineId: machine,
+        agent,
+        model,
+        range,
+        granularity,
+      }),
+    [agent, granularity, machine, model, projection, range],
   );
+  const recoveredInScope = requestedSelection.recoveredInScope;
+  const activeGranularity: Granularity = recoveredInScope ? "month" : granularity;
+  const activeRange: RangeKey = recoveredInScope ? "all" : range;
 
-  const displayRows: TokenRow[] =
-    model === "all" ? scopedAgentRows : scopedModelRows;
-  const totals = useMemo(() => summarize(displayRows), [displayRows]);
-  const agentTotals = useMemo(
-    () => summarize(scopedAgentRows),
-    [scopedAgentRows],
-  );
+  useEffect(() => {
+    if (recoveredInScope) {
+      if (granularity !== "month") setGranularity("month");
+      if (range !== "all") setRange("all");
+    }
+  }, [granularity, range, recoveredInScope]);
 
-  const allScopedModelRows = useMemo(
+  const selectedResult = useMemo(
     () =>
-      modelRows.filter(
-        (row) =>
-          (machine === "all"
-            ? !row.global_duplicate
-            : row.machine_id === machine) &&
-          (agent === "all" || row.agent === agent) &&
-          (!rangeStart || row.usage_date >= rangeStart),
-      ),
-    [agent, machine, modelRows, rangeStart],
+      selectUnifiedUsage(projection, {
+        machineId: machine,
+        agent,
+        model,
+        range: activeRange,
+        granularity: activeGranularity,
+      }),
+    [activeGranularity, activeRange, agent, machine, model, projection],
   );
 
-  const modelComponentTotal = useMemo(
+  const selection = useMemo(
     () =>
-      allScopedModelRows.reduce(
-        (total, row) =>
-          total +
-          row.input_tokens +
-          row.output_tokens +
-          row.cache_read_tokens +
-          row.cache_creation_tokens,
-        0,
-      ),
-    [allScopedModelRows],
+      selectedResult.status === "ready"
+        ? selectedResult
+        : {
+            status: "ready" as const,
+            dailyRows: [],
+            monthlyRows: [],
+            modelRows: [],
+            totals: summarizeUnifiedUsage([]),
+            recoveredInScope: selectedResult.recoveredInScope,
+            modelAttributionExcluded: selectedResult.modelAttributionExcluded,
+            supportsDayWeek: selectedResult.supportsDayWeek,
+            supportsRollingRanges: selectedResult.supportsRollingRanges,
+            effectiveRange: activeRange,
+          },
+    [activeRange, selectedResult],
   );
-  const agentComponentTotal =
-    agentTotals.input +
-    agentTotals.output +
-    agentTotals.cache +
-    agentTotals.cacheCreation;
-  const modelCoverage = agentComponentTotal
-    ? (modelComponentTotal / agentComponentTotal) * 100
+  const displayRows = useMemo(
+    () => toChartRows(selection, activeGranularity),
+    [activeGranularity, selection],
+  );
+  const totals = {
+    total: selection.totals.totalTokens,
+    input: selection.totals.inputTokens,
+    output: selection.totals.outputTokens,
+    cache: selection.totals.cacheReadTokens,
+    cacheCreation: selection.totals.cacheCreationTokens,
+    delta: selection.totals.accountingDeltaTokens,
+    cost: selection.totals.reportedCostUsd,
+    costRows: selection.totals.costRows,
+  };
+  const modelRows = selection.modelRows;
+  const canonicalModelRows = modelRows.filter(
+    (row): row is Extract<
+      UnifiedModelUsageRow,
+      { kind: "canonical-attributed" }
+    > => row.kind === "canonical-attributed",
+  );
+  const topModels = useMemo(
+    () => summarizeModelRows(modelRows),
+    [modelRows],
+  );
+  const modelAttributedTotal = totals.total;
+  const modelComponentTotal = canonicalModelRows.reduce(
+    (total, row) =>
+      total +
+      row.inputTokens +
+      row.outputTokens +
+      row.cacheReadTokens +
+      row.cacheCreationTokens,
+    0,
+  );
+  const modelCoverage = selection.totals.componentTotalTokens
+    ? (modelComponentTotal / selection.totals.componentTotalTokens) * 100
     : 0;
 
   const byDay = useMemo(() => {
     const values = new Map<string, number>();
-    for (const row of displayRows) {
-      values.set(
-        row.usage_date,
-        (values.get(row.usage_date) ?? 0) + row.reported_total_tokens,
-      );
+    for (const row of selection.dailyRows) {
+      values.set(row.usageDate, (values.get(row.usageDate) ?? 0) + row.totalTokens);
     }
+    return [...values.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, total]) => ({ date, total }));
+  }, [selection.dailyRows]);
+
+  const byPeriod = useMemo(() => {
+    const values = new Map<string, number>();
+
+    for (const row of displayRows) {
+      values.set(row.period, (values.get(row.period) ?? 0) + row.totalTokens);
+    }
+
     return [...values.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, total]) => ({ date, total }));
   }, [displayRows]);
 
-  const byPeriod = useMemo(() => {
-    const values = new Map<string, number>();
-
-    function periodKey(date: string) {
-      if (granularity === "month") return date.slice(0, 7);
-      if (granularity === "week") {
-        const value = new Date(date + "T12:00:00Z");
-        const day = value.getUTCDay();
-        const mondayOffset = day === 0 ? -6 : 1 - day;
-        value.setUTCDate(value.getUTCDate() + mondayOffset);
-        return value.toISOString().slice(0, 10);
-      }
-      return date;
-    }
-
-    for (const row of displayRows) {
-      const key = periodKey(row.usage_date);
-      values.set(key, (values.get(key) ?? 0) + row.reported_total_tokens);
-    }
-
-    return [...values.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date, total }));
-  }, [displayRows, granularity]);
-
   const byAgent = useMemo(() => {
     const values = new Map<string, number>();
     for (const row of displayRows) {
-      values.set(row.agent, (values.get(row.agent) ?? 0) + row.reported_total_tokens);
+      values.set(row.agent, (values.get(row.agent) ?? 0) + row.totalTokens);
     }
     return [...values.entries()].sort((a, b) => b[1] - a[1]);
   }, [displayRows]);
@@ -405,70 +514,15 @@ export function DashboardView({
   const byMachine = useMemo(() => {
     const values = new Map<string, number>();
     for (const row of displayRows) {
-      values.set(
-        row.machine_id,
-        (values.get(row.machine_id) ?? 0) + row.reported_total_tokens,
-      );
+      values.set(row.machineId, (values.get(row.machineId) ?? 0) + row.totalTokens);
     }
     return [...values.entries()].sort((a, b) => b[1] - a[1]);
   }, [displayRows]);
 
-  const topModels = useMemo(() => {
-    const values = new Map<
-      string,
-      {
-        model: string;
-        total: number;
-        input: number;
-        output: number;
-        cache: number;
-        cacheCreation: number;
-        cost: number;
-        costRows: number;
-        agents: Set<string>;
-        days: Set<string>;
-      }
-    >();
-
-    for (const row of scopedModelRows) {
-      const current = values.get(row.model) ?? {
-        model: row.model,
-        total: 0,
-        input: 0,
-        output: 0,
-        cache: 0,
-        cacheCreation: 0,
-        cost: 0,
-        costRows: 0,
-        agents: new Set<string>(),
-        days: new Set<string>(),
-      };
-      current.total += row.reported_total_tokens;
-      current.input += row.input_tokens;
-      current.output += row.output_tokens;
-      current.cache += row.cache_read_tokens;
-      current.cacheCreation += row.cache_creation_tokens;
-      if (row.reported_cost_usd !== null) {
-        current.cost += row.reported_cost_usd;
-        current.costRows += 1;
-      }
-      current.agents.add(row.agent);
-      current.days.add(row.usage_date);
-      values.set(row.model, current);
-    }
-
-    return [...values.values()].sort((a, b) => b.total - a.total).slice(0, 10);
-  }, [scopedModelRows]);
-
-  const modelAttributedTotal = scopedModelRows.reduce(
-    (total, row) => total + row.reported_total_tokens,
-    0,
-  );
-
   const visibleImports = useMemo(
     () =>
       recentImports
-        .filter((item) => machine === "all" || item.machine_id === machine)
+        .filter((item) => machine === ALL_MACHINES || item.machine_id === machine)
         .slice(0, 3),
     [machine, recentImports],
   );
@@ -476,11 +530,10 @@ export function DashboardView({
   const latestProcessed = recentImports.find(
     (item) => item.status === "processed",
   );
-
   const activeCollection =
-    collectionHints.find((item) => item.id === machine) ??
-    collectionHints[0] ??
-    null;
+    machine === ALL_MACHINES
+      ? collectionHints[0] ?? null
+      : collectionHints.find((item) => item.id === machine) ?? null;
 
   const chartMax = niceCeiling(
     Math.max(...byPeriod.map((period) => period.total), 1),
@@ -493,12 +546,17 @@ export function DashboardView({
   const cacheShare = totals.total ? (totals.cache / totals.total) * 100 : 0;
   const inputShare = totals.total ? (totals.input / totals.total) * 100 : 0;
   const outputShare = totals.total ? (totals.output / totals.total) * 100 : 0;
-  const costCoverage = displayRows.length
-    ? (totals.costRows / displayRows.length) * 100
+  const costCoverage = selection.totals.rowCount
+    ? (totals.costRows / selection.totals.rowCount) * 100
     : 0;
-  const activeDays = byDay.filter((item) => item.total > 0).length;
-  const averageActiveDay = activeDays ? totals.total / activeDays : 0;
+  const detailedTotal = selection.dailyRows.reduce(
+    (total, row) => total + row.totalTokens,
+    0,
+  );
+  const detailedDays = byDay.filter((item) => item.total > 0).length;
+  const averageDetailedDay = detailedDays ? detailedTotal / detailedDays : 0;
   const peakDay = [...byDay].sort((a, b) => b.total - a.total)[0] ?? null;
+  const hasUsage = selection.totals.rowCount > 0;
 
   async function copyCommand() {
     if (!activeCollection?.command) return;
@@ -544,6 +602,15 @@ export function DashboardView({
     }
   }
 
+  if (selectedResult.status === "unsupported") {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
+        Daily and weekly detail is unavailable for the recovered lost-PC history.
+        Select Month and All to view its exact monthly totals.
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 pb-8">
       <header className="flex min-w-0 flex-col justify-between gap-5 xl:flex-row xl:items-end">
@@ -555,7 +622,7 @@ export function DashboardView({
             Token burn, without snapshot inflation.
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Canonical daily truth with agent, model, cost and source detail.
+            One view of every known token, with precision matched to the surviving evidence.
           </p>
         </div>
 
@@ -587,13 +654,20 @@ export function DashboardView({
                 <button
                   key={value}
                   type="button"
-                  aria-pressed={range === value}
+                  aria-pressed={activeRange === value}
+                  aria-disabled={recoveredInScope && value !== "all"}
+                  disabled={recoveredInScope && value !== "all"}
+                  title={
+                    recoveredInScope && value !== "all"
+                      ? "Rolling ranges are unavailable for recovered monthly history."
+                      : undefined
+                  }
                   onClick={() => setRange(value)}
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs transition",
-                    range === value
+                    activeRange === value
                       ? "bg-blue-50 text-blue-700 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700",
+                      : "text-slate-500 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40",
                   ].join(" ")}
                 >
                   {label}
@@ -609,13 +683,20 @@ export function DashboardView({
                 <button
                   key={value}
                   type="button"
-                  aria-pressed={granularity === value}
+                  aria-pressed={activeGranularity === value}
+                  aria-disabled={recoveredInScope && value !== "month"}
+                  disabled={recoveredInScope && value !== "month"}
+                  title={
+                    recoveredInScope && value !== "month"
+                      ? "Daily and weekly detail is unavailable for recovered monthly history."
+                      : undefined
+                  }
                   onClick={() => setGranularity(value)}
                   className={[
                     "rounded-lg px-2.5 py-1.5 text-xs capitalize transition",
-                    granularity === value
+                    activeGranularity === value
                       ? "bg-blue-50 text-blue-700 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700",
+                      : "text-slate-500 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40",
                   ].join(" ")}
                 >
                   {value}
@@ -637,6 +718,11 @@ export function DashboardView({
                   {item.name}
                 </option>
               ))}
+              {projection.recoveredSet ? (
+                <option value={LOST_WINDOWS_PC_MACHINE_ID}>
+                  {LOST_WINDOWS_PC_MACHINE_NAME}
+                </option>
+              ) : null}
             </select>
             <select
               aria-label="Filter by agent"
@@ -672,10 +758,28 @@ export function DashboardView({
         </div>
       </header>
 
-      <KnownUsageSummary totals={knownUsageTotals} />
-      <RecoveredHistoryCard evidence={recoveredEvidence} />
+      {recoveredInScope ? (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs leading-5 text-amber-900">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>
+            Lost Windows PC history is included at exact monthly and agent
+            granularity. Daily and weekly detail is unavailable for this
+            recovered history. Reported cost may be incomplete for some
+            recovered models.
+          </p>
+        </div>
+      ) : null}
+      {selection.modelAttributionExcluded ? (
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+          <p>
+            Recovered lost-PC usage is excluded from this model-specific view
+            because per-model token attribution is unavailable.
+          </p>
+        </div>
+      ) : null}
 
-      {rows.length === 0 ? (
+      {!hasUsage ? (
         <div className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
           <Database className="mx-auto h-8 w-8 text-slate-500" />
           <h2 className="mt-4 text-xl font-semibold">No accepted usage yet</h2>
@@ -685,7 +789,7 @@ export function DashboardView({
         </div>
       ) : (
         <>
-          <section className="mt-7 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          <section className="mt-7 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
             <Metric
               label={model === "all" ? "Total tokens" : "Model tokens"}
               value={compact(totals.total)}
@@ -706,6 +810,18 @@ export function DashboardView({
               progress={cacheShare}
             />
             <Metric
+              label="Cache create"
+              value={compact(totals.cacheCreation)}
+              detail={
+                totals.total
+                  ? ((totals.cacheCreation / totals.total) * 100).toFixed(1) +
+                    "% of selected total"
+                  : "No cache creation tokens"
+              }
+              icon={Database}
+              accent="blue"
+            />
+            <Metric
               label="Input tokens"
               value={compact(totals.input)}
               detail={inputShare.toFixed(1) + "% of selected total"}
@@ -722,23 +838,25 @@ export function DashboardView({
               progress={outputShare}
             />
             <Metric
-              label="Models"
+              label="Attributed models"
               value={String(models.length)}
               detail={
-                modelRows.length
+                models.length
                   ? modelCoverage.toFixed(1) + "% component coverage"
-                  : "Model detail not loaded"
+                  : recoveredInScope
+                    ? "Recovered model names only"
+                    : "Model detail not loaded"
               }
               icon={BarChart3}
               accent="blue"
               progress={modelRows.length ? modelCoverage : undefined}
             />
             <Metric
-              label="ccusage cost"
+              label="Reported cost"
               value={totals.costRows ? money(totals.cost) : "—"}
               detail={
                 totals.costRows
-                  ? totals.costRows + "/" + displayRows.length + " rows priced"
+                  ? totals.costRows + " reported rows with cost"
                   : "No reported cost data"
               }
               icon={CircleDollarSign}
@@ -747,28 +865,36 @@ export function DashboardView({
             />
           </section>
 
+          {selection.totals.pricingComplete ? null : (
+            <p className="mt-3 text-xs text-amber-700">
+              {recoveredInScope
+                ? "Reported cost is incomplete for some recovered models."
+                : "Reported cost is unavailable for some selected rows."}
+            </p>
+          )}
+
           <section className="mt-4 grid min-w-0 gap-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5 md:p-6">
               <div className="mb-5 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-semibold text-slate-900">
-                    {granularity === "day"
+                    {activeGranularity === "day"
                       ? "Daily token burn"
-                      : granularity === "week"
+                      : activeGranularity === "week"
                         ? "Weekly token burn"
                         : "Monthly token burn"}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
                     {model === "all"
-                      ? "Canonical tokens grouped from latest accepted rows"
+                      ? "Canonical detailed rows plus exact recovered monthly rows"
                       : "Model-attributed canonical tokens for " + model}
                   </p>
                 </div>
                 <span className="shrink-0 rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
                   {byPeriod.length}{" "}
-                  {granularity === "day"
+                  {activeGranularity === "day"
                     ? "days"
-                    : granularity === "week"
+                    : activeGranularity === "week"
                       ? "weeks"
                       : "months"}
                 </span>
@@ -820,7 +946,7 @@ export function DashboardView({
                             " reported tokens"
                           }
                           title={
-                            formatPeriodLabel(period.date, granularity) +
+                            formatPeriodLabel(period.date, activeGranularity) +
                             ": " +
                             period.total.toLocaleString() +
                             " tokens"
@@ -850,7 +976,7 @@ export function DashboardView({
                       className="min-w-0 text-center text-[9px] text-slate-500"
                     >
                       {index % labelEvery === 0 || index === byPeriod.length - 1
-                        ? formatPeriodLabel(period.date, granularity)
+                        ? formatPeriodLabel(period.date, activeGranularity)
                         : ""}
                     </span>
                   ))}
@@ -905,17 +1031,17 @@ export function DashboardView({
                 <div>
                   <h2 className="font-semibold text-slate-900">Model usage</h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    Per-model attribution from ccusage modelBreakdowns
+                    Canonical model attribution plus recovered evidence buckets
                   </p>
                 </div>
                 {modelRows.length ? (
                   <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[10px] uppercase tracking-wider text-slate-500">
-                    {models.length} models · {modelCoverage.toFixed(1)}% covered
+                    {models.length} attributed models · {modelCoverage.toFixed(1)}% of components
                   </span>
                 ) : null}
               </div>
 
-              {modelRows.length === 0 ? (
+              {canonicalModelRows.length === 0 && modelRows.length === 0 ? (
                 <div className="mt-5 rounded-2xl border border-dashed border-blue-200 bg-blue-50/70 p-5">
                   <p className="text-sm font-medium text-slate-800">
                     Model detail is still in the preserved raw snapshot.
@@ -966,20 +1092,34 @@ export function DashboardView({
                           ? (item.cache / item.total) * 100
                           : 0;
                         return (
-                          <tr key={item.model}>
+                          <tr key={item.key}>
                             <td className="max-w-[300px] py-3 pr-4">
-                              <button
-                                type="button"
-                                onClick={() => setModel(item.model)}
-                                className="block max-w-full truncate font-mono text-[11px] font-medium text-slate-800 transition hover:text-blue-600"
-                                title={item.model}
-                              >
-                                {item.model}
-                              </button>
+                              {item.kind === "canonical-attributed" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setModel(item.label)}
+                                  className="block max-w-full truncate font-mono text-[11px] font-medium text-slate-800 transition hover:text-blue-600"
+                                  title={item.label}
+                                >
+                                  {item.label}
+                                </button>
+                              ) : (
+                                <p className="font-medium text-slate-800">
+                                  {item.label}
+                                </p>
+                              )}
                               <span className="mt-1 block text-[10px] text-slate-500">
-                                {item.days.size} active day
-                                {item.days.size === 1 ? "" : "s"}
+                                {item.kind === "canonical-attributed"
+                                  ? item.periods.size +
+                                    " detailed day" +
+                                    (item.periods.size === 1 ? "" : "s")
+                                  : "Attribution unavailable"}
                               </span>
+                              {item.kind === "recovered-unattributed" ? (
+                                <span className="mt-1 block text-[10px] leading-4 text-slate-500">
+                                  Known models: {item.knownModels.join(", ") || "not listed"}
+                                </span>
+                              ) : null}
                             </td>
                             <td className="py-3 pr-4 capitalize text-slate-500">
                               {[...item.agents].join(", ")}
@@ -1008,20 +1148,25 @@ export function DashboardView({
             <div className="min-w-0 rounded-2xl border border-slate-200/90 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.025)] p-5">
               <h2 className="font-semibold text-slate-900">Usage detail</h2>
               <p className="mt-1 text-xs text-slate-500">
-                Selected scope at a glance
+                Selected scope at a glance; daily metrics use detailed telemetry only
               </p>
 
               <div className="mt-5 grid grid-cols-2 gap-3">
                 {[
-                  ["Active days", activeDays.toLocaleString()],
-                  ["Avg / active day", compact(averageActiveDay)],
-                  ["Peak day", peakDay ? compact(peakDay.total) : "—"],
-                  ["Peak date", peakDay ? formatDate(peakDay.date) : "—"],
+                  ["Detailed days", detailedDays.toLocaleString()],
+                  ["Avg / detailed day", compact(averageDetailedDay)],
+                  ["Peak detailed day", peakDay ? compact(peakDay.total) : "—"],
+                  [
+                    "Peak detailed date",
+                    peakDay ? formatDate(peakDay.date) : "—",
+                  ],
                   ["Agents", String(byAgent.length)],
                   ["Machines", String(byMachine.length)],
                   [
                     "Model coverage",
-                    modelRows.length ? modelCoverage.toFixed(1) + "%" : "—",
+                    canonicalModelRows.length
+                      ? modelCoverage.toFixed(1) + "%"
+                      : "Unattributed",
                   ],
                   ["Accounting delta", compact(totals.delta)],
                 ].map(([label, value]) => (
@@ -1055,6 +1200,10 @@ export function DashboardView({
                 {byMachine.map(([id, value]) => {
                   const machineRow = machines.find((item) => item.id === id);
                   const share = totals.total ? (value / totals.total) * 100 : 0;
+                  const machineName =
+                    id === LOST_WINDOWS_PC_MACHINE_ID
+                      ? LOST_WINDOWS_PC_MACHINE_NAME
+                      : machineRow?.name ?? id;
                   return (
                     <div
                       key={id}
@@ -1063,10 +1212,13 @@ export function DashboardView({
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-slate-800">
-                            {machineRow?.name ?? id}
+                            {machineName}
                           </p>
                           <p className="mt-1 text-[11px] text-slate-500">
                             {share.toFixed(1)}% of selected total
+                            {id === LOST_WINDOWS_PC_MACHINE_ID
+                              ? " · exact monthly history"
+                              : ""}
                           </p>
                         </div>
                         <span className="shrink-0 text-sm tabular-nums text-slate-500">
