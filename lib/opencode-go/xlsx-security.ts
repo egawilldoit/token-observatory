@@ -7,21 +7,25 @@ import { inflateRawSync } from "node:zlib";
  * workbook parsing. Dependency-free: parses the ZIP central directory
  * manually and uses node:zlib only to bound decompressed sizes.
  *
- * Effective V1 upload limits:
- * - max XLSX file size:             4 MiB
- * - max multipart request size:     4.25 MiB
- * - max ZIP entries:               256
- * - max single uncompressed entry: 16 MiB
- * - max total uncompressed size:   32 MiB
+ * Workbook/ZIP safety budgets from the product contract:
+ * - max XLSX container inspected by preflight: 8 MiB
+ * - max multipart target budget:             10 MiB
+ * - max ZIP entries:                         256
+ * - max single uncompressed entry:           16 MiB
+ * - max total uncompressed size:             32 MiB
  *
- * The original product target allowed 8 MiB files / 10 MiB multipart bodies,
- * but Vercel Functions cap request payloads at 4.5 MB before application code
- * runs. Keep the application request bound below that upstream cap and reserve
- * 256 KiB for multipart framing so the documented file size is actually
- * reachable in production.
+ * Vercel Functions enforce a lower 4.5 MB request-body ceiling before
+ * application code runs. The upload route therefore MUST use the effective
+ * production limits below: 4 MiB file + 256 KiB multipart overhead. Keeping
+ * the ZIP preflight's intrinsic 8 MiB ceiling is intentional defense in depth:
+ * the public route can never reach it with a >4 MiB workbook on Vercel, while
+ * direct/internal uses still enforce the original parser safety budget.
  */
-export const OPENCODE_GO_MAX_FILE_BYTES = 4 * 1024 * 1024;
-export const OPENCODE_GO_MAX_REQUEST_BYTES = 4 * 1024 * 1024 + 256 * 1024;
+export const OPENCODE_GO_MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const OPENCODE_GO_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+export const OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES = 4 * 1024 * 1024;
+export const OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES =
+  OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES + 256 * 1024;
 export const OPENCODE_GO_MAX_ZIP_ENTRIES = 256;
 export const OPENCODE_GO_MAX_SINGLE_UNCOMPRESSED_BYTES = 16 * 1024 * 1024;
 export const OPENCODE_GO_MAX_TOTAL_UNCOMPRESSED_BYTES = 32 * 1024 * 1024;
