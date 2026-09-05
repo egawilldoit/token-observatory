@@ -13,8 +13,8 @@ import {
 import { OpenCodeGoParseError, parseOpenCodeGoWorkbook } from "@/lib/opencode-go/parser";
 import { buildStoredSnapshot } from "@/lib/opencode-go/snapshot";
 import {
-  OPENCODE_GO_MAX_FILE_BYTES,
-  OPENCODE_GO_MAX_REQUEST_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
   XlsxPreflightError,
   preflightXlsxBuffer,
 } from "@/lib/opencode-go/xlsx-security";
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (requestExceedsBytes(request, OPENCODE_GO_MAX_REQUEST_BYTES)) {
+  if (requestExceedsBytes(request, OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES)) {
     return NextResponse.json({ error: "Import request is too large." }, { status: 413 });
   }
 
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       { status: 422 },
     );
   }
-  if (file.size <= 0 || file.size > OPENCODE_GO_MAX_FILE_BYTES) {
+  if (file.size <= 0 || file.size > OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES) {
     return NextResponse.json(
       { error: "XLSX file must be between 1 byte and 4 MiB." },
       { status: 413 },
