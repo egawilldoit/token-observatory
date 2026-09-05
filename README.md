@@ -65,6 +65,7 @@ supabase/migrations/20260905_007_recovered_additive_accounting.sql
 supabase/migrations/20260905_008_opencode_go_tracker.sql
 supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql
 supabase/migrations/20260905_010_opencode_go_upload_limit.sql
+supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql
 ```
 
 The migrations create:
@@ -91,6 +92,7 @@ The migrations create:
 - `recovered_usage_sets` and `recovered_monthly_usage` for preserved historical evidence
 - `opencode_go_imports` for immutable OpenCode Go tracker snapshots
 - private Storage bucket `opencode-go-imports` for raw OpenCode Go workbooks
+- a one-processing-import-per-cycle guard so same-cycle history validation cannot race
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.
@@ -206,6 +208,8 @@ claims live or provider-verified usage.
   arrive as newer same-cycle uploads: previously recorded actuals may move up
   or down while the full sequence stays non-decreasing, but non-null values
   may never become blank and the cycle plan is frozen after first acceptance.
+- Same-cycle uploads are serialized while processing so a concurrent workbook
+  cannot validate against stale accepted history and then supersede a newer snapshot.
 - Exact raw re-uploads are idempotent by SHA-256 (`exact_duplicate`).
 - Raw workbooks stay private in the `opencode-go-imports` bucket; there is no
   user-facing delete in V1.
