@@ -624,6 +624,7 @@ describe("opencode-go persistence migration", () => {
     assert.match(sql, /revoke all on table public\.opencode_go_imports from anon, authenticated/);
     assert.match(sql, /grant all on table public\.opencode_go_imports to service_role/);
     assert.match(sql, /'opencode-go-imports'/);
+    assert.match(sql, /0\.000000001/);
   });
 
   it("never alters ccusage or recovered tables", async () => {

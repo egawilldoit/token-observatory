@@ -74,7 +74,10 @@ create table if not exists public.opencode_go_imports (
       and safety_reserve >= 0
       and safety_reserve < hard_limit
       and planned_ceiling is not null
-      and planned_ceiling = hard_limit - safety_reserve
+      -- Epsilon, not exact equality: the application computes the ceiling in
+      -- binary floating point (e.g. 1 - 0.1), while numeric subtraction here
+      -- is exact decimal. Exact equality would reject truthful inserts.
+      and abs(planned_ceiling - (hard_limit - safety_reserve)) < 0.000000001
       and baseline_usage is not null
       and baseline_usage >= 0
       and baseline_usage <= planned_ceiling
