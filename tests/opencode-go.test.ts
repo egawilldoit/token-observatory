@@ -28,6 +28,7 @@ import {
   preflightXlsxBuffer,
 } from "../lib/opencode-go/xlsx-security.js";
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
+import { reconcileFormulas } from "../lib/opencode-go/formula.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -414,5 +415,26 @@ describe("opencode-go workbook parser", () => {
       () => parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ actuals: { "2026-09-03": -0.01 } })),
       /actual/,
     );
+  });
+});
+
+describe("opencode-go formula diagnostics", () => {
+  it("reports no warnings when cached values match", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({}));
+    const result = reconcileFormulas(parsed);
+    assert.equal(result.formulaValuesAvailable, true);
+    assert.equal(result.mismatchCount, 0);
+    assert.equal(result.warnings.length, 0);
+  });
+
+  it("reports warning-only mismatches without replacing app values", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ ceilingSkew: 0.01 }));
+    const result = reconcileFormulas(parsed);
+    assert.ok(result.mismatchCount > 0);
+    assert.ok(result.warnings.length > 0);
+    assert.equal(result.applicationCeilings.length, parsed.checkpoints.length);
+    const day1 = result.applicationCeilings.find((c) => c.day === 1);
+    const skewed = parsed.formulaValues.find((f) => f.checkpointDay === 1);
+    assert.ok(day1 && skewed && Math.abs(day1.ceiling - skewed.value) > 1e-6);
   });
 });
