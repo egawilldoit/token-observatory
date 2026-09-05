@@ -7,21 +7,27 @@ import * as XLSX from "xlsx";
 import { buildOpenCodeGoWorkbookBuffer } from "../lib/opencode-go/fixtures.js";
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 import {
-  OPENCODE_GO_MAX_FILE_BYTES,
-  OPENCODE_GO_MAX_REQUEST_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES,
+  OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
 } from "../lib/opencode-go/xlsx-security.js";
 
 describe("OpenCode Go review hardening", () => {
-  it("keeps application upload limits below Vercel's 4.5 MB request cap", () => {
-    assert.equal(OPENCODE_GO_MAX_FILE_BYTES, 4 * 1024 * 1024);
-    assert.equal(OPENCODE_GO_MAX_REQUEST_BYTES, 4 * 1024 * 1024 + 256 * 1024);
-    assert.ok(OPENCODE_GO_MAX_FILE_BYTES < OPENCODE_GO_MAX_REQUEST_BYTES);
+  it("keeps deployed upload limits below Vercel's 4.5 MB request cap", () => {
+    assert.equal(OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES, 4 * 1024 * 1024);
+    assert.equal(
+      OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
+      4 * 1024 * 1024 + 256 * 1024,
+    );
     assert.ok(
-      OPENCODE_GO_MAX_REQUEST_BYTES < 4_500_000,
+      OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES < OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES,
+    );
+    assert.ok(
+      OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES < 4_500_000,
       "multipart limit must remain below Vercel's upstream 4.5 MB payload cap",
     );
     assert.ok(
-      OPENCODE_GO_MAX_REQUEST_BYTES - OPENCODE_GO_MAX_FILE_BYTES >= 256 * 1024,
+      OPENCODE_GO_EFFECTIVE_MAX_REQUEST_BYTES - OPENCODE_GO_EFFECTIVE_MAX_FILE_BYTES >=
+        256 * 1024,
       "reserve multipart framing overhead above the advertised file limit",
     );
   });
@@ -51,7 +57,7 @@ describe("OpenCode Go review hardening", () => {
     assert.equal(parsed.checkpoints.length, 29);
   });
 
-  it("keeps the private Storage bucket limit aligned with the application file limit", async () => {
+  it("keeps the private Storage bucket limit aligned with the deployed file limit", async () => {
     const migration = await readFile(
       new URL(
         "../supabase/migrations/20260905_010_opencode_go_upload_limit.sql",
