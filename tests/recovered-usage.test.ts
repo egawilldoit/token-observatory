@@ -142,6 +142,7 @@ test("terminal evidence remains names-only and the dashboard has one total path"
   assert.match(migration, /models text\[\]/);
   assert.match(seed, /Missing pricing for laguna-s-2\.1-free/);
   assert.match(seed, /Missing pricing for ox-alpha-free/);
+  const numericLiterals = new Set(seed.match(/\d+(?:\.\d+)?/g) ?? []);
   for (const value of [
     9172233,
     760817,
@@ -165,7 +166,10 @@ test("terminal evidence remains names-only and the dashboard has one total path"
     9666290902,
     1386.19,
   ]) {
-    assert.match(seed, new RegExp(String(value).replace(".", "\\.")));
+    assert.ok(
+      numericLiterals.has(String(value)),
+      `seed is missing exact numeric literal ${value}`,
+    );
   }
   assert.match(seed, /gpt-5\.6-terra/);
   assert.match(seed, /\[pi\] deepseek-v4-flash/);
