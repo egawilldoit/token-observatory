@@ -46,18 +46,16 @@ export async function getLatestRecoveryEvidence(): Promise<RecoveredUsageEvidenc
   if (!isTelemetryConfigured()) return null;
 
   const supabase = createAdminClient();
-  const [{ data: sets, error: setsError }, rows] = await Promise.all([
-    supabase
-      .from("recovered_usage_sets")
-      .select(RECOVERED_SET_SUMMARY_COLUMNS)
-      .order("created_at", { ascending: false }),
-    getRecoveredMonthlyRows(),
-  ]);
+  const { data: sets, error: setsError } = await supabase
+    .from("recovered_usage_sets")
+    .select(RECOVERED_SET_SUMMARY_COLUMNS)
+    .order("created_at", { ascending: false })
+    .limit(1);
 
   if (setsError) throw setsError;
-  const set = sets[0];
+  const set = sets?.[0] as RecoveredUsageSetSummary | undefined;
+  if (!set) return null;
 
-  return set
-    ? { set: set as RecoveredUsageSetSummary, rows }
-    : null;
+  const rows = await getRecoveredMonthlyRows(set.id);
+  return { set, rows };
 }
