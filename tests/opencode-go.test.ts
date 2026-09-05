@@ -14,6 +14,7 @@ import {
   casablancaWallToInstant,
   parseCasablancaDateTime,
 } from "../lib/opencode-go/time.js";
+import { evaluateTrackerStatus } from "../lib/opencode-go/status.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -130,5 +131,133 @@ describe("opencode-go pacing calculations", () => {
   it("computes budget remaining floored at zero", () => {
     assert.ok(Math.abs(budgetRemaining(1.0, 0.182) - 0.818) < 1e-12);
     assert.equal(budgetRemaining(1.0, 1.4), 0);
+  });
+});
+
+describe("opencode-go freshness and status", () => {
+  function snapshotWithActuals(actuals: Record<string, number | null>) {
+    const checkpoints = generateCheckpoints({
+      trackingStartMs: TRACKING_START,
+      resetAtMs: RESET_AT,
+      checkTime: "12:00",
+    }).map((c) => {
+      const t = casablancaWallToInstant(c.date, "12:00");
+      const ceiling = checkpointCeiling({
+        checkpointMs: t,
+        trackingStartMs: TRACKING_START,
+        resetAtMs: RESET_AT,
+        baselineUsage: 0.048,
+        plannedCeilingValue: 1.0,
+      });
+      return {
+        ...c,
+        timestampMs: t,
+        ceiling,
+        workbookCeiling: null as number | null,
+        actual: (actuals[c.date] ?? null) as number | null,
+      };
+    });
+    return checkpoints;
+  }
+
+  const SEP5_NOW = parseCasablancaDateTime("2026-09-05 14:29");
+
+  it("reports UPDATE_DUE with baseline source when Sep 5 actual is missing", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({}),
+    });
+    assert.equal(result.status, "UPDATE_DUE");
+    assert.equal(result.latestRecorded.source, "baseline");
+    assert.equal(result.latestRecorded.value, 0.048);
+    assert.equal(result.headroom, null);
+  });
+
+  it("reports UPDATE_DUE with Sep 4 actual when Sep 5 is blank", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({ "2026-09-03": 0.15, "2026-09-04": 0.18 }),
+    });
+    assert.equal(result.status, "UPDATE_DUE");
+    assert.equal(result.latestRecorded.value, 0.18);
+    assert.equal(result.latestRecorded.checkpointDate, "2026-09-04");
+  });
+
+  it("reports ON_TRACK for fresh 18.2% with headroom ≈ +4.53pp", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({ "2026-09-05": 0.182 }),
+    });
+    assert.equal(result.status, "ON_TRACK");
+    assert.ok(result.headroom != null && Math.abs(result.headroom - 0.0453) < 5e-4);
+  });
+
+  it("reports NEAR_LIMIT for fresh 21.7% with headroom ≈ +1.03pp", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({ "2026-09-05": 0.217 }),
+    });
+    assert.equal(result.status, "NEAR_LIMIT");
+    assert.ok(result.headroom != null && Math.abs(result.headroom - 0.0103) < 5e-4);
+  });
+
+  it("reports OVER_PACE for fresh 27.4%", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({ "2026-09-05": 0.274 }),
+    });
+    assert.equal(result.status, "OVER_PACE");
+    assert.ok(result.headroom != null && result.headroom < 0);
+  });
+
+  it("reports LIMIT_EXCEEDED at 100% even when the required checkpoint is blank", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: SEP5_NOW,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({ "2026-09-04": 1.0 }),
+    });
+    assert.equal(result.status, "LIMIT_EXCEEDED");
+  });
+
+  it("reports RESET_REQUIRED at or after reset", () => {
+    const result = evaluateTrackerStatus({
+      nowMs: RESET_AT,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({}),
+    });
+    assert.equal(result.status, "RESET_REQUIRED");
+  });
+
+  it("qualifies pre-first-checkpoint as ON_TRACK without headroom", () => {
+    const beforeFirst = parseCasablancaDateTime("2026-08-31 08:00");
+    const result = evaluateTrackerStatus({
+      nowMs: beforeFirst,
+      resetAtMs: RESET_AT,
+      hardLimit: 1.0,
+      baselineUsage: 0.048,
+      checkpoints: snapshotWithActuals({}),
+    });
+    assert.equal(result.status, "ON_TRACK");
+    assert.equal(result.preFirstCheckpoint, true);
+    assert.equal(result.headroom, null);
   });
 });
