@@ -29,6 +29,7 @@ import {
 } from "../lib/opencode-go/xlsx-security.js";
 import { parseOpenCodeGoWorkbook } from "../lib/opencode-go/parser.js";
 import { reconcileFormulas } from "../lib/opencode-go/formula.js";
+import { readFile, readdir } from "node:fs/promises";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -436,5 +437,49 @@ describe("opencode-go formula diagnostics", () => {
     const day1 = result.applicationCeilings.find((c) => c.day === 1);
     const skewed = parsed.formulaValues.find((f) => f.checkpointDay === 1);
     assert.ok(day1 && skewed && Math.abs(day1.ceiling - skewed.value) > 1e-6);
+  });
+});
+
+describe("opencode-go persistence migration", () => {
+  const MIGRATION = new URL(
+    "../supabase/migrations/20260905_008_opencode_go_tracker.sql",
+    import.meta.url,
+  );
+
+  it("creates an isolated opencode_go_imports domain with guards", async () => {
+    const sql = await readFile(MIGRATION, "utf8");
+    assert.match(sql, /create table if not exists public\.opencode_go_imports/);
+    assert.match(sql, /raw_sha256[\s\S]*where status in \('processing', 'processed'\)/);
+    assert.match(sql, /enable row level security/);
+    assert.match(sql, /revoke all on table public\.opencode_go_imports from anon, authenticated/);
+    assert.match(sql, /grant all on table public\.opencode_go_imports to service_role/);
+    assert.match(sql, /'opencode-go-imports'/);
+  });
+
+  it("never alters ccusage or recovered tables", async () => {
+    const sql = await readFile(MIGRATION, "utf8");
+    const executable = sql
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    for (const table of [
+      "daily_usage_observations",
+      "daily_model_usage_observations",
+      "session_usage_observations",
+      "cross_machine_daily_dedupe",
+      "recovered_usage_sets",
+      "recovered_monthly_usage",
+    ]) {
+      assert.doesNotMatch(executable, new RegExp(`(create|alter|insert|update|delete)[^;]*${table}`, "i"));
+    }
+    assert.doesNotMatch(executable, /process_ccusage_import_v3/);
+  });
+
+  it("is the next migration after 007 without renumbering history", async () => {
+    const dir = new URL("../supabase/migrations/", import.meta.url);
+    const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
+    assert.ok(files.includes("20260905_006_recovered_monthly_usage.sql"));
+    assert.ok(files.includes("20260905_007_recovered_additive_accounting.sql"));
+    assert.ok(files.includes("20260905_008_opencode_go_tracker.sql"));
   });
 });
