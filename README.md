@@ -60,6 +60,7 @@ supabase/migrations/20260829_002_collection_state.sql
 supabase/migrations/20260830_003_model_telemetry.sql
 supabase/migrations/20260830_004_cross_machine_session_dedupe.sql
 supabase/migrations/20260830_005_cross_machine_dedupe_indexes.sql
+supabase/migrations/20260905_006_recovered_monthly_usage.sql
 ```
 
 The migrations create:
@@ -83,11 +84,32 @@ The migrations create:
 - `process_ccusage_import_v3(...)`
 - private Storage bucket `raw-imports`
 - per-machine active-raw-hash dedupe and one-processing-import-per-machine guards
+- `recovered_usage_sets` and `recovered_monthly_usage` for preserved historical evidence
 
 Telemetry tables are server-only in V1: RLS is enabled and browser roles have
 no grants. The secret/service-role credential is never exposed to the browser.
 Mutation APIs distinguish 401/403, reject cross-site browser requests, and bound
 request/file metadata before parsing.
+
+## Recovered monthly evidence
+
+The original Windows machines that produced the May–August 2026 `ccusage
+monthly` reports are permanently lost. The terminal output is therefore the
+highest surviving granularity: exact monthly aggregates by agent. No daily,
+session, or per-model token history was reconstructed.
+
+The two surviving reports are stored as one recovery set with
+`source_machine_count = 2`, `suspected_mirror = true`, and
+`accounting_mode = evidence_only_non_additive`. This records two provenance
+sources without counting a possible mirrored history twice. Recovery rows live
+only in `recovered_usage_sets` and `recovered_monthly_usage`; they are not
+inserted into canonical daily, model, session, import, or cross-machine dedupe
+tables and are never silently added to dashboard totals.
+
+The preserved set totals 9,666,290,902 tokens. Its reported $1,386.19 cost is
+informational and potentially incomplete because `laguna-s-2.1-free` and
+`ox-alpha-free` had missing pricing warnings. The raw terminal reports are
+stored with the recovery set as immutable surviving evidence.
 
 Direct dependency versions and CI actions are pinned to reviewed versions/commit
 SHAs. Next.js responses disable the powered-by header and apply baseline frame,

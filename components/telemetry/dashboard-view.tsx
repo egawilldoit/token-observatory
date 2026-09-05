@@ -16,10 +16,12 @@ import {
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { RecoveredHistoryCard } from "@/components/telemetry/recovered-history-card";
 import type {
   CurrentDailyModelUsageRow,
   CurrentDailyUsageRow,
 } from "@/lib/ccusage/types";
+import type { RecoveredUsageEvidence } from "@/lib/recovery/types";
 import type {
   ImportRow,
   MachineCollectionHint,
@@ -226,12 +228,14 @@ export function DashboardView({
   machines,
   recentImports,
   collectionHints,
+  recoveredEvidence,
 }: {
   rows: CurrentDailyUsageRow[];
   modelRows: CurrentDailyModelUsageRow[];
   machines: MachineRow[];
   recentImports: ImportRow[];
   collectionHints: MachineCollectionHint[];
+  recoveredEvidence: RecoveredUsageEvidence | null;
 }) {
   const router = useRouter();
   const [machine, setMachine] = useState("all");
@@ -663,6 +667,8 @@ export function DashboardView({
           </div>
         </div>
       </header>
+
+      <RecoveredHistoryCard evidence={recoveredEvidence} />
 
       {rows.length === 0 ? (
         <div className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
