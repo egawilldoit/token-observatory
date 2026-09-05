@@ -293,7 +293,7 @@ export async function POST(request: Request) {
 
   const parsedSnapshot = stored;
 
-  const { error: finalizeError } = await supabase
+  const { data: finalized, error: finalizeError } = await supabase
     .from("opencode_go_imports")
     .update({
       status: "processed",
@@ -310,9 +310,11 @@ export async function POST(request: Request) {
       processed_at: new Date().toISOString(),
     })
     .eq("id", importId)
-    .eq("status", "processing");
+    .eq("status", "processing")
+    .select("id")
+    .maybeSingle();
 
-  if (finalizeError) {
+  if (finalizeError || !finalized) {
     let cleanupOk = false;
     try {
       const { error: removeError } = await supabase.storage.from(OPENCODE_GO_BUCKET).remove([storagePath]);
@@ -329,7 +331,11 @@ export async function POST(request: Request) {
         cleanupOk,
       }),
     );
-    await markFailed(supabase, importId, finalizeError.message);
+    await markFailed(
+      supabase,
+      importId,
+      finalizeError?.message ?? "processing row was not promoted",
+    );
     return NextResponse.json({ error: "Database promotion failed." }, { status: 500 });
   }
 
