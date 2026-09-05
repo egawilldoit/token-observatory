@@ -37,6 +37,8 @@ import {
   validateCorrection,
   validateSameCyclePlan,
 } from "../lib/opencode-go/import-semantics.js";
+import { buildStoredSnapshot } from "../lib/opencode-go/snapshot.js";
+import { buildTrackerViewModel } from "../lib/opencode-go/view-model.js";
 
 const TRACKING_START = parseCasablancaDateTime("2026-08-30 22:29");
 const RESET_AT = parseCasablancaDateTime("2026-09-29 11:29");
@@ -618,5 +620,65 @@ describe("opencode-go import API contract", () => {
     }
     assert.doesNotMatch(source, /from\("imports"\)|daily_usage_observations|process_ccusage_import/);
     assert.doesNotMatch(source, /lib\/ccusage/);
+  });
+});
+
+describe("opencode-go dashboard view model", () => {
+  function viewModel(actuals: Record<string, number | null>, now: string) {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ actuals }));
+    return buildTrackerViewModel(
+      buildStoredSnapshot(parsed),
+      parseCasablancaDateTime(now),
+    );
+  }
+
+  it("recomputes ceilings in application code, preserving workbook cache", () => {
+    const parsed = parseOpenCodeGoWorkbook(buildOpenCodeGoWorkbookBuffer({ ceilingSkew: 0.01 }));
+    const stored = buildStoredSnapshot(parsed);
+    assert.equal(stored.checkpoints.length, 29);
+    const first = stored.checkpoints[0] as { ceiling: number; workbookCeiling: number | null };
+    assert.ok(Math.abs(first.ceiling - 0.0664) < 0.005);
+    assert.ok(first.workbookCeiling != null && Math.abs((first.workbookCeiling as number) - first.ceiling - 0.01) < 1e-9);
+    assert.ok(stored.workbookDiagnostics.formulaMismatchCount > 0);
+  });
+
+  it("shows UPDATE_DUE with baseline and Sep 5 ceiling ≈ 22.73%", () => {
+    const vm = viewModel({}, "2026-09-05 14:29");
+    assert.equal(vm.status, "UPDATE_DUE");
+    assert.equal(vm.latestRecorded.source, "baseline");
+    assert.equal(vm.latestRecorded.value, 0.048);
+    assert.ok(vm.requiredCeiling != null && Math.abs(vm.requiredCeiling - 0.2273) < 5e-4);
+    assert.equal(vm.headroom, null);
+  });
+
+  it("shows UPDATE_DUE with Sep 4 actual when Sep 5 is blank", () => {
+    const vm = viewModel({ "2026-09-03": 0.15, "2026-09-04": 0.18 }, "2026-09-05 14:29");
+    assert.equal(vm.status, "UPDATE_DUE");
+    assert.equal(vm.latestRecorded.value, 0.18);
+    assert.equal(vm.latestRecorded.checkpointDate, "2026-09-04");
+  });
+
+  it("shows ON_TRACK for 18.2% with headroom ≈ +4.53 pp", () => {
+    const vm = viewModel({ "2026-09-05": 0.182 }, "2026-09-05 14:29");
+    assert.equal(vm.status, "ON_TRACK");
+    assert.ok(vm.headroom != null && Math.abs(vm.headroom - 0.0453) < 5e-4);
+    assert.ok(Math.abs(vm.remainingBudget - 0.818) < 1e-9);
+  });
+
+  it("shows NEAR_LIMIT for 21.7% with headroom ≈ +1.03 pp", () => {
+    const vm = viewModel({ "2026-09-05": 0.217 }, "2026-09-05 14:29");
+    assert.equal(vm.status, "NEAR_LIMIT");
+    assert.ok(vm.headroom != null && Math.abs(vm.headroom - 0.0103) < 5e-4);
+  });
+
+  it("shows OVER_PACE for 27.4% at ≈ +4.67 pp over target", () => {
+    const vm = viewModel({ "2026-09-05": 0.274 }, "2026-09-05 14:29");
+    assert.equal(vm.status, "OVER_PACE");
+    assert.ok(vm.headroom != null && Math.abs(vm.headroom + 0.0467) < 5e-4);
+  });
+
+  it("shows LIMIT_EXCEEDED at 100% and RESET_REQUIRED after reset", () => {
+    assert.equal(viewModel({ "2026-09-04": 1.0 }, "2026-09-05 14:29").status, "LIMIT_EXCEEDED");
+    assert.equal(viewModel({}, "2026-09-29 11:29").status, "RESET_REQUIRED");
   });
 });

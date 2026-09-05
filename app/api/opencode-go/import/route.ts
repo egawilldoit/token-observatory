@@ -3,20 +3,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { getObservatoryAccess } from "@/lib/auth/require-user";
-import {
-  budgetRemaining,
-  checkpointCeiling,
-  latestRecordedActual,
-  plannedCeiling,
-} from "@/lib/opencode-go/calculations";
+import { budgetRemaining } from "@/lib/opencode-go/calculations";
 import { OPENCODE_GO_BUCKET } from "@/lib/opencode-go/config";
-import { reconcileFormulas } from "@/lib/opencode-go/formula";
 import {
   OpenCodeGoConflictError,
   validateCorrection,
   validateSameCyclePlan,
 } from "@/lib/opencode-go/import-semantics";
 import { OpenCodeGoParseError, parseOpenCodeGoWorkbook } from "@/lib/opencode-go/parser";
+import { buildStoredSnapshot } from "@/lib/opencode-go/snapshot";
 import {
   OPENCODE_GO_MAX_FILE_BYTES,
   OPENCODE_GO_MAX_REQUEST_BYTES,
@@ -181,22 +176,15 @@ export async function POST(request: Request) {
     );
   }
 
-  const planned = plannedCeiling({ hardLimit: parsed.hardLimit, safetyReserve: parsed.safetyReserve });
-  const ceilings = parsed.checkpoints.map((c) => ({
+  const stored = buildStoredSnapshot(parsed);
+  const planned = stored.plannedCeiling;
+  const ceilings = stored.checkpoints.map((c) => ({
     ...c,
-    ceiling: checkpointCeiling({
-      checkpointMs: c.timestampMs,
-      trackingStartMs: parsed.trackingStartMs,
-      resetAtMs: parsed.resetAtMs,
-      baselineUsage: parsed.baselineUsage,
-      plannedCeilingValue: planned,
-    }),
+    timestampMs: Date.parse(c.timestamp),
   }));
-  const latest = latestRecordedActual(
-    ceilings.map((c) => ({ timestampMs: c.timestampMs, date: c.date, timestamp: new Date(c.timestampMs).toISOString(), actual: c.actual })),
-    parsed.baselineUsage,
-  );
-  const reconciliation = reconcileFormulas(parsed);
+  const latest = stored.latestRecordedActual;
+  const mismatchCount = stored.workbookDiagnostics.formulaMismatchCount;
+  const formulaWarnings = stored.workbookDiagnostics.formulaWarnings;
   const remaining = budgetRemaining(planned, latest.value);
 
   const trackingStartIso = new Date(parsed.trackingStartMs).toISOString();
@@ -302,31 +290,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Raw file storage failed." }, { status: 500 });
   }
 
-  const parsedSnapshot = {
-    timezone: "Africa/Casablanca",
-    trackingStartsAt: trackingStartIso,
-    resetAt: resetAtIso,
-    checkTime: parsed.checkTime,
-    baselineUsage: parsed.baselineUsage,
-    hardLimit: parsed.hardLimit,
-    safetyReserve: parsed.safetyReserve,
-    plannedCeiling: planned,
-    checkpoints: ceilings.map((c, i) => ({
-      day: c.day,
-      date: c.date,
-      checkTime: c.checkTime,
-      timestamp: new Date(c.timestampMs).toISOString(),
-      ceiling: c.ceiling,
-      workbookCeiling: parsed.checkpoints[i]?.ceiling ?? null,
-      actual: c.actual,
-    })),
-    latestRecordedActual: latest,
-    workbookDiagnostics: {
-      formulaValuesAvailable: reconciliation.formulaValuesAvailable,
-      formulaMismatchCount: reconciliation.mismatchCount,
-      formulaWarnings: reconciliation.warnings.slice(0, 50),
-    },
-  };
+  const parsedSnapshot = stored;
 
   const { error: finalizeError } = await supabase
     .from("opencode_go_imports")
@@ -340,8 +304,8 @@ export async function POST(request: Request) {
       latest_actual_usage: latest.value,
       latest_actual_date: latest.checkpointDate,
       parsed_snapshot: parsedSnapshot,
-      formula_mismatch_count: reconciliation.mismatchCount,
-      formula_warnings: reconciliation.warnings.slice(0, 50),
+      formula_mismatch_count: mismatchCount,
+      formula_warnings: formulaWarnings,
       processed_at: new Date().toISOString(),
     })
     .eq("id", importId)
@@ -375,7 +339,7 @@ export async function POST(request: Request) {
     checkpointCount: ceilings.length,
     latestRecordedActual: latest,
     budgetRemaining: remaining,
-    formulaMismatchCount: reconciliation.mismatchCount,
-    formulaWarnings: reconciliation.warnings.slice(0, 50),
+    formulaMismatchCount: mismatchCount,
+    formulaWarnings,
   });
 }
