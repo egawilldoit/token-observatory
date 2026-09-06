@@ -1277,12 +1277,12 @@ describe("v2 persistence and background collection", () => {
     assert.match(sql, /append_opencode_go_provider_snapshot/);
     assert.match(sql, /pg_advisory_xact_lock/);
     assert.match(sql, /monthly_percent >= 0 and monthly_percent <= 1/);
-    // Pre-existing out-of-contract rows are clamped inside the migration so
-    // the new constraint cannot fail on unexpected data; append-only is
-    // restored immediately around the one-time backfill.
-    assert.match(sql, /where monthly_percent > 1/);
-    assert.match(sql, /disable trigger opencode_go_provider_snapshots_no_mutation/);
-    assert.match(sql, /enable trigger opencode_go_provider_snapshots_no_mutation/);
+    // Pre-existing out-of-contract rows fail loudly for manual review;
+    // append-only evidence is never rewritten in place.
+    assert.match(sql, /raise exception/);
+    assert.match(sql, /manual review/);
+    assert.doesNotMatch(sql, /disable trigger/i);
+    assert.doesNotMatch(sql, /set monthly_percent/i);
     assert.match(sql, /grant execute on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /revoke all on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /set search_path = pg_catalog/);
