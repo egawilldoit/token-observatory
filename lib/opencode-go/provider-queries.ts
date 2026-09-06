@@ -3,6 +3,8 @@
 
 export type SupabaseAdminLike = {
   from: (table: string) => unknown;
+  /** Thenable on purpose: the real client returns a PostgrestFilterBuilder. */
+  rpc?: (fn: string, params: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
 export type OpenCodeGoProviderSnapshotRow = {

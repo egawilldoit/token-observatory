@@ -70,6 +70,7 @@ supabase/migrations/20260905_010_opencode_go_upload_limit.sql
 supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql
 supabase/migrations/20260905_012_opencode_go_trigger_search_path.sql
 supabase/migrations/20260906_013_opencode_go_provider_snapshots.sql
+supabase/migrations/20260906_014_opencode_go_provider_append_rpc.sql
 ```
 
 The migrations create:
