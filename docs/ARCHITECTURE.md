@@ -250,8 +250,9 @@ STALE >30m. Status precedence is `RESET_REQUIRED` → `LIMIT_EXCEEDED` →
 `SYNC_STALE` → `OVER_PACE` → `NEAR_PLAN` → `ON_TRACK` with headroom in
 percentage points (`safe_ceiling - provider_monthly`). `resetsAt` jitter is
 canonicalized to whole seconds with a 60s same-window tolerance. Rollover
-uses normalized reset-window advancement with temporal validation (a usage
-drop is supporting evidence only, never required); a provider reset that
+uses normalized reset-window advancement with temporal validation (usage
+movement plays no role: a same-window collapse is a mid-cycle move, never a
+rollover); a provider reset that
 merely differs from the contract reset in the same cycle is not a reset.
 Checkpoint history assigns the first snapshot in
 `[checkpoint, next)` inside the contract window only. Raw provider readings

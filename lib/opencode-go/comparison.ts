@@ -36,6 +36,9 @@ export const V2_RECENT_MS = 30 * 60 * 1000;
 export const V2_SYNC_STALE_MS = 30 * 60 * 1000;
 /** Headroom (fraction) at or below this is NEAR_PLAN. 0.02 = 2pp. */
 export const V2_NEAR_PLAN_HEADROOM = 0.02;
+/** Binary floating-point guards for the NEAR_PLAN band (shared with history rows). */
+export const V2_HEADROOM_LOWER_EPS = -1e-12;
+export const V2_HEADROOM_UPPER_EPS = 1e-9;
 /** Backend refresh cooldown: 45s within the required 30-60s band. */
 export const V2_REFRESH_COOLDOWN_MS = 45 * 1000;
 /** Page auto-refresh threshold: fetch when the latest snapshot is >=2min old. */
@@ -89,8 +92,6 @@ export type V2PreviousProvider = {
 export const V2_RESET_TOLERANCE_MS = 60_000;
 /** Advancement at or above this is a new cycle even without temporal proof. */
 const V2_ROLLOVER_MIN_ADVANCEMENT_MS = 24 * 60 * 60 * 1000;
-/** Same-window usage collapse kept as a defensive rollover signal. */
-const V2_ROLLOVER_SAME_WINDOW_DROP = 0.1;
 
 function isRateLimited(status: string): boolean {
   const normalized = status.trim().toLowerCase().replace(/_/g, "-");
@@ -156,11 +157,14 @@ export function getActiveContractState(contract: V2Contract, nowMs: number): Act
  * temporal validation: the canonical reset must have advanced beyond jitter
  * tolerance AND the previous window must have ended (its reset instant is at
  * or before the current observation time), or the advancement itself must be
- * unambiguously a new cycle (>= 1 day). A usage drop is supporting evidence
- * only and is never required: a genuine reset from low usage (e.g. 8% -> 1%)
- * is still a rollover.
+ * unambiguously a new cycle (>= 1 day). Usage movement plays no role: a
+ * genuine reset from low usage (e.g. 8% -> 1%) is a rollover because the
+ * window advanced, and a same-window collapse (e.g. 41% -> 29%) is never one.
  *
- * Millisecond/second jitter around the same instant is never a rollover.
+ * Readings in the SAME reset window are never a rollover, however far usage
+ * moved (e.g. 41% -> 29% with an unchanged resetsAt is a mid-cycle move, not
+ * a new cycle). Millisecond/second jitter around the same instant is likewise
+ * never a rollover.
  */
 export function detectProviderRollover(
   previous: V2PreviousProvider | null,
@@ -176,26 +180,15 @@ export function detectProviderRollover(
     return false;
   }
   const advancement = current.resetsAtMs - previous.resetsAtMs;
-  if (advancement <= V2_RESET_TOLERANCE_MS) {
-    // Same reset window (jitter): fall through to the defensive same-window
-    // collapse check below.
-  } else if (
+  if (advancement <= V2_RESET_TOLERANCE_MS) return false;
+  if (
     previous.resetsAtMs <= current.observedAtMs + V2_RESET_TOLERANCE_MS ||
     advancement >= V2_ROLLOVER_MIN_ADVANCEMENT_MS
   ) {
     return true;
-  } else {
-    // Small advancement before the previous window ended: clock correction,
-    // not a new cycle.
-    return false;
   }
-  // Defensive: same-window usage collapse (no reset movement at all).
-  if (
-    Math.abs(current.resetsAtMs - previous.resetsAtMs) <= V2_RESET_TOLERANCE_MS &&
-    previous.monthlyFraction - current.monthlyFraction > V2_ROLLOVER_SAME_WINDOW_DROP
-  ) {
-    return true;
-  }
+  // Small advancement before the previous window ended: clock correction,
+  // not a new cycle.
   return false;
 }
 
@@ -327,7 +320,7 @@ export function evaluateComparison(args: {
   }
 
   // 5. NEAR_PLAN: headroom in [0, 2pp] inclusive (with epsilon for binary fp).
-  if (headroom >= -1e-12 && headroom <= V2_NEAR_PLAN_HEADROOM + 1e-9) {
+  if (headroom >= V2_HEADROOM_LOWER_EPS && headroom <= V2_NEAR_PLAN_HEADROOM + V2_HEADROOM_UPPER_EPS) {
     return { ...base, status: "NEAR_PLAN", safeHeadroom: headroom, providerRemaining, providerMonthly, providerStatus: provider.monthlyStatus, isRollover };
   }
 

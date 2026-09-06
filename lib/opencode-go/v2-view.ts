@@ -3,6 +3,9 @@
 
 import {
   evaluateComparison,
+  V2_HEADROOM_LOWER_EPS,
+  V2_HEADROOM_UPPER_EPS,
+  V2_NEAR_PLAN_HEADROOM,
   type V2Comparison,
   type V2Contract,
   type V2PreviousProvider,
@@ -92,8 +95,20 @@ export function buildV2View(args: {
     };
   }
   const contract = toV2Contract(contractSnapshot);
-  const latest = providerSnapshotsNewestFirst[0] ?? null;
-  const previousRow = providerSnapshotsNewestFirst[1] ?? null;
+  // Contract-window scoping: the live comparison uses ONLY snapshots
+  // observed inside the active contract
+  // (trackingStartMs <= observed_at < resetAtMs). A prior-cycle reading must
+  // never serve as the live truth for a new contract.
+  const inWindow = providerSnapshotsNewestFirst.filter((row) => {
+    const observedMs = Date.parse(row.observed_at);
+    return (
+      Number.isFinite(observedMs) &&
+      observedMs >= contract.trackingStartMs &&
+      observedMs < contract.resetAtMs
+    );
+  });
+  const latest = inWindow[0] ?? null;
+  const previousRow = inWindow[1] ?? null;
   const provider: V2ProviderReading | null = latest ? snapshotToReading(latest) : null;
   const previous: V2PreviousProvider | null = previousRow
     ? {
@@ -129,11 +144,12 @@ export type V2CheckpointRow = {
   isFuture: boolean;
 };
 
+/** Same NEAR_PLAN band as evaluateComparison (shared constant + epsilons). */
 function rowStatusForHeadroom(headroom: number, providerFraction: number): string {
   if (providerFraction >= 1) return "Limit exceeded";
   if (providerFraction < 0) return "—";
-  if (headroom < 0) return "Over pace";
-  if (headroom <= 0.02) return "Near plan";
+  if (headroom < V2_HEADROOM_LOWER_EPS) return "Over pace";
+  if (headroom <= V2_NEAR_PLAN_HEADROOM + V2_HEADROOM_UPPER_EPS) return "Near plan";
   return "On track";
 }
 

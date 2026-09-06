@@ -34,6 +34,7 @@ import {
 } from "../lib/opencode-go/comparison.js";
 import { buildV2CheckpointRows, buildV2View } from "../lib/opencode-go/v2-view.js";
 import { refreshProviderSnapshot } from "../lib/opencode-go/refresh.js";
+import { collectProviderUsage, isCronAuthorized } from "../lib/opencode-go/collect.js";
 import { formatWholePercent } from "../lib/opencode-go/format.js";
 
 // ---------------------------------------------------------------------------
@@ -305,6 +306,30 @@ describe("v2 provider schema", () => {
     assert.equal(result.monthly.monthlyFraction, 0.19);
     assert.ok(result.fetchDurationMs >= 0);
     assert.ok(Number.isFinite(result.fetchedAtMs));
+  });
+
+  it("captures arrival before JSON parsing (slow parsers don't shift observed_at)", async () => {
+    let resolveJson: ((value: unknown) => void) | null = null;
+    const gate = new Promise<unknown>((resolve) => {
+      resolveJson = resolve;
+    });
+    const slowFetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: () => gate,
+      }) as unknown as Response) as typeof fetch;
+    const pending = fetchProviderMonthly({ apiKey: "k", fetchFn: slowFetch });
+    // Let the fetch resolve, then hold JSON parsing open.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const beforeResolve = Date.now();
+    resolveJson!(monthlyPayload());
+    const result = await pending;
+    // Arrival was captured before parsing finished: duration excludes the
+    // 50ms+ parse gate, and fetchedAtMs predates the resolve.
+    assert.ok(result.fetchedAtMs <= beforeResolve);
+    assert.ok(result.fetchDurationMs < 50);
+    assert.equal(result.monthly.monthlyFraction, 0.19);
   });
 
   it("sanitizes user-facing messages (no secret, no raw errors)", () => {
@@ -678,14 +703,31 @@ describe("v2 rollover and reset distinction", () => {
     );
   });
 
-  it("keeps a same-window usage collapse as a defensive rollover signal", () => {
+  it("never treats a same-window usage move as a rollover (41% -> 29%)", () => {
+    const R1 = Date.parse("2026-09-01T00:00:00.000Z");
+    const observed = R1 - 86400000;
     assert.equal(
       detectProviderRollover(
-        { resetsAtMs: R1, monthlyFraction: 0.8, observedAtMs: R1 - 86400000 },
-        { resetsAtMs: R1, monthlyFraction: 0.5, observedAtMs: R1 - 80000000 },
+        { resetsAtMs: R1, monthlyFraction: 0.41, observedAtMs: observed },
+        { resetsAtMs: R1, monthlyFraction: 0.29, observedAtMs: observed + 60000 },
       ),
-      true,
+      false,
     );
+    // Same-window collapse is a mid-cycle move: compare normally, no reset.
+    const contract = contractFixture();
+    const nowMs = contract.checkpoints[2]!.timestampMs + 1000;
+    const result = evaluateComparison({
+      contract,
+      nowMs,
+      provider: reading({ monthlyFraction: 0.29, observedAtMs: nowMs - 1000 }),
+      previousProvider: {
+        resetsAtMs: Date.parse("2026-09-29T21:29:00.000Z"),
+        monthlyFraction: 0.41,
+        observedAtMs: nowMs - 3600000,
+      },
+    });
+    assert.notEqual(result.status, "RESET_REQUIRED");
+    assert.equal(result.isRollover, false);
   });
 
   it("does NOT require RESET when contract/provider resets differ in the same cycle", () => {
@@ -859,6 +901,119 @@ describe("v2 snapshot and refresh rules", () => {
     // observed_at (request start) <= fetched_at (response received).
     assert.ok(Date.parse(row.observed_at as string) <= Date.parse(row.fetched_at as string));
     assert.equal(row.source, "opencode_api");
+  });
+
+  function rpcStubClient(impl: {
+    rpc?: (params: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+    rows?: Record<string, unknown>[];
+    inserted?: Record<string, unknown>[];
+    rpcCalls?: Record<string, unknown>[];
+  }) {
+    const rows = impl.rows ?? [];
+    const inserted = impl.inserted ?? [];
+    const rpcCalls = impl.rpcCalls ?? [];
+    return {
+      client: {
+        from(table: string) {
+          assert.equal(table, "opencode_go_provider_snapshots");
+          return {
+            select: () => ({
+              order: () => ({
+                order: () => ({
+                  limit: (n: number) => {
+                    if (n === 1) return { maybeSingle: async () => ({ data: rows[0] ?? null, error: null }) };
+                    return Promise.resolve({ data: rows.slice(0, n), error: null });
+                  },
+                }),
+              }),
+            }),
+            insert: (row: Record<string, unknown>) => ({
+              select: () => ({
+                maybeSingle: async () => {
+                  const created = { id: "legacy-id", created_at: new Date().toISOString(), ...row };
+                  inserted.push(created);
+                  return { data: created, error: null };
+                },
+              }),
+            }),
+          };
+        },
+        rpc: async (fn: string, params: Record<string, unknown>) => {
+          rpcCalls.push({ fn, params });
+          if (impl.rpc) return impl.rpc(params);
+          throw new Error("rpc not stubbed");
+        },
+      },
+      rows,
+      inserted,
+      rpcCalls,
+    };
+  }
+
+  it("refresh appends atomically through the RPC when available", async () => {
+    const storedSnapshot = { id: "rpc-id", observed_at: new Date().toISOString() };
+    const stub = rpcStubClient({
+      rpc: (async () => ({ data: { stored: true, snapshot: storedSnapshot }, error: null })),
+    });
+    const outcome = await refreshProviderSnapshot(stub.client as never, Date.now(), {
+      apiKey: "test-key",
+      fetchFn: (async () => jsonResponse(monthlyPayload())) as typeof fetch,
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) {
+      assert.equal(outcome.stored, true);
+      assert.deepEqual(outcome.snapshot, storedSnapshot);
+    }
+    assert.equal(stub.rpcCalls.length, 1);
+    assert.equal((stub.rpcCalls[0] as { fn: string }).fn, "append_opencode_go_provider_snapshot");
+    const params = (stub.rpcCalls[0] as { params: Record<string, unknown> }).params;
+    assert.equal(params.p_monthly_percent, 0.19);
+    assert.equal(params.p_monthly_status, "ok");
+    // Legacy path untouched: no direct reads or inserts.
+    assert.equal(stub.inserted.length, 0);
+  });
+
+  it("refresh honors stored:false from the RPC without inserting", async () => {
+    const existing = { id: "existing", observed_at: new Date().toISOString() };
+    const stub = rpcStubClient({
+      rpc: (async () => ({ data: { stored: false, snapshot: existing }, error: null })),
+    });
+    const outcome = await refreshProviderSnapshot(stub.client as never, Date.now(), {
+      apiKey: "test-key",
+      fetchFn: (async () => jsonResponse(monthlyPayload())) as typeof fetch,
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) {
+      assert.equal(outcome.stored, false);
+      assert.deepEqual(outcome.snapshot, existing);
+    }
+    assert.equal(stub.inserted.length, 0);
+  });
+
+  it("refresh falls back to the legacy path when the RPC is missing", async () => {
+    const stub = rpcStubClient({
+      rpc: (async () => ({ data: null, error: { code: "PGRST202", message: "Could not find the function" } })),
+    });
+    const outcome = await refreshProviderSnapshot(stub.client as never, Date.now(), {
+      apiKey: "test-key",
+      fetchFn: (async () => jsonResponse(monthlyPayload())) as typeof fetch,
+    });
+    assert.equal(outcome.ok, true);
+    if (outcome.ok) assert.equal(outcome.stored, true);
+    assert.equal(stub.inserted.length, 1);
+  });
+
+  it("refresh surfaces real RPC storage errors", async () => {
+    const stub = rpcStubClient({
+      rpc: (async () => ({ data: null, error: { code: "42501", message: "permission denied" } })),
+    });
+    await assert.rejects(
+      refreshProviderSnapshot(stub.client as never, Date.now(), {
+        apiKey: "test-key",
+        fetchFn: (async () => jsonResponse(monthlyPayload())) as typeof fetch,
+      }),
+      /Could not store the provider observation/,
+    );
   });
 
   it("refresh failures preserve the last snapshot with a sanitized message", async () => {
@@ -1113,6 +1268,25 @@ describe("v2 persistence and background collection", () => {
     assert.doesNotMatch(executable, /drop table/i);
   });
 
+  it("adds migration 014: atomic append RPC plus 0..1 percent contract", async () => {
+    const sql = await readFile(
+      new URL("../supabase/migrations/20260906_014_opencode_go_provider_append_rpc.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(sql, /append_opencode_go_provider_snapshot/);
+    assert.match(sql, /pg_advisory_xact_lock/);
+    assert.match(sql, /monthly_percent >= 0 and monthly_percent <= 1/);
+    assert.match(sql, /grant execute on function public\.append_opencode_go_provider_snapshot/);
+    assert.match(sql, /revoke all on function public\.append_opencode_go_provider_snapshot/);
+    assert.match(sql, /set search_path = pg_catalog/);
+    // Forward-only: drops/replaces only the new table's own check plus the
+    // new function; never touches ccusage/recovered/import objects.
+    const executable = sql.split("\n").filter((line) => !line.trim().startsWith("--")).join("\n");
+    assert.doesNotMatch(executable, /daily_usage_observations|recovered_monthly_usage|process_ccusage_import/);
+    assert.doesNotMatch(executable, /opencode_go_imports/);
+    assert.doesNotMatch(executable, /drop table/i);
+  });
+
   it("keeps provider writes off the contract table", async () => {
     const queries = await readFile(new URL("../lib/opencode-go/provider-queries.ts", import.meta.url), "utf8");
     assert.match(queries, /opencode_go_provider_snapshots/);
@@ -1145,13 +1319,78 @@ describe("v2 persistence and background collection", () => {
 
   it("restricts collection to CRON_SECRET (least privilege, no sessions)", async () => {
     const source = await readFile(new URL("../app/api/opencode-go/collect/route.ts", import.meta.url), "utf8");
-    assert.match(source, /cronAuthorized/);
-    assert.match(source, /Bearer/);
-    assert.match(source, /status: 401/);
-    assert.match(source, /status: 503/);
+    assert.match(source, /collectProviderUsage/);
+    assert.match(source, /CRON_SECRET/);
     assert.doesNotMatch(source, /getObservatoryAccess|hasObservatoryAccess/);
     assert.doesNotMatch(source, /console\.(log|error)/);
     assert.doesNotMatch(source, /Authorization.*apiKey|apiKey.*Authorization/i);
+    const logic = await readFile(new URL("../lib/opencode-go/collect.ts", import.meta.url), "utf8");
+    assert.match(logic, /isCronAuthorized/);
+    assert.match(logic, /status: 401/);
+    assert.match(logic, /status: 502/);
+    assert.match(logic, /status: 503/);
+  });
+
+  it("implements collect HTTP semantics for every configuration case", async () => {
+    const client = { from: () => { throw new Error("must not be called"); } } as never;
+    const base = {
+      telemetryConfigured: true,
+      cronSecret: "cron-secret",
+      authHeader: "Bearer cron-secret",
+      apiKey: "go-key",
+      nowMs: Date.now(),
+      getClient: () => client,
+    };
+    // Missing CRON_SECRET -> 503.
+    assert.equal((await collectProviderUsage({ ...base, cronSecret: null })).status, 503);
+    // Wrong / missing Authorization -> 401.
+    assert.equal((await collectProviderUsage({ ...base, authHeader: "Bearer wrong" })).status, 401);
+    assert.equal((await collectProviderUsage({ ...base, authHeader: null })).status, 401);
+    // Missing telemetry -> 503.
+    assert.equal((await collectProviderUsage({ ...base, telemetryConfigured: false })).status, 503);
+    // Missing API key -> 503.
+    assert.equal((await collectProviderUsage({ ...base, apiKey: null })).status, 503);
+    // Provider temporary failure -> 502 with a generic body (no leak).
+    const failing = await collectProviderUsage({
+      ...base,
+      runRefresh: (async () => ({ ok: false, code: "upstream", message: "upstream: boom go-key" })) as never,
+    });
+    assert.equal(failing.status, 502);
+    assert.equal(failing.body.collected, false);
+    assert.doesNotMatch(JSON.stringify(failing.body), /go-key|boom|upstream:/);
+    // Storage/unknown failure -> 500.
+    const throwing = await collectProviderUsage({
+      ...base,
+      runRefresh: (async () => { throw new Error("db down go-key"); }) as never,
+    });
+    assert.equal(throwing.status, 500);
+    assert.doesNotMatch(JSON.stringify(throwing.body), /go-key|db down/);
+    // Success -> 200, stored flag preserved, key forwarded to refresh only.
+    const seen: { apiKey?: string } = {};
+    const okStored = await collectProviderUsage({
+      ...base,
+      runRefresh: (async (_c: unknown, _n: number, deps: { apiKey: string }) => {
+        seen.apiKey = deps.apiKey;
+        return { ok: true, stored: true, snapshot: {}, fetchDurationMs: 1 };
+      }) as never,
+    });
+    assert.equal(okStored.status, 200);
+    assert.deepEqual(okStored.body, { collected: true, stored: true });
+    assert.equal(seen.apiKey, "go-key");
+    const okSkipped = await collectProviderUsage({
+      ...base,
+      runRefresh: (async () => ({ ok: true, stored: false, snapshot: {}, fetchDurationMs: 1 })) as never,
+    });
+    assert.equal(okSkipped.status, 200);
+    assert.deepEqual(okSkipped.body, { collected: true, stored: false });
+  });
+
+  it("compares cron bearers in constant time on length-checked input", () => {
+    assert.equal(isCronAuthorized("s3cret", "Bearer s3cret"), true);
+    assert.equal(isCronAuthorized("s3cret", "Bearer wrong!"), false);
+    assert.equal(isCronAuthorized("s3cret", null), false);
+    assert.equal(isCronAuthorized(null, "Bearer s3cret"), false);
+    assert.equal(isCronAuthorized("s3cret", "Bearer short"), false);
   });
 
   it("enforces a backend refresh cooldown in the refresh route", async () => {
@@ -1316,6 +1555,124 @@ describe("v2 ui contract", () => {
     const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
     assert.match(dashboard, /Contract reset/);
     assert.match(dashboard, /Provider reset/);
+  });
+
+  it("scopes the live comparison to the active contract window (no prior-cycle leak)", () => {
+    const contract = contractFixture();
+    const nowMs = contract.checkpoints[2]!.timestampMs + 1000;
+    // Latest reading belongs to the PREVIOUS cycle (94%, observed before the
+    // new contract's tracking start). The new contract has no snapshot yet.
+    const priorCycle = {
+      id: "prior",
+      observed_at: new Date(contract.trackingStartMs - 3600000).toISOString(),
+      fetched_at: new Date(contract.trackingStartMs - 3600000).toISOString(),
+      monthly_percent: 0.94,
+      monthly_status: "ok",
+      provider_resets_at: new Date(contract.trackingStartMs - 86400000).toISOString(),
+      source: "opencode_api",
+      fetch_duration_ms: 50,
+      created_at: new Date(contract.trackingStartMs - 3600000).toISOString(),
+    };
+    const view = buildV2View({
+      contractSnapshot: {
+        timezone: "Africa/Casablanca",
+        trackingStartsAt: new Date(contract.trackingStartMs).toISOString(),
+        resetAt: new Date(contract.resetAtMs).toISOString(),
+        checkTime: "12:00",
+        baselineUsage: contract.baseline,
+        hardLimit: 1,
+        safetyReserve: 0,
+        plannedCeiling: 1,
+        checkpoints: contract.checkpoints.map((c) => ({
+          day: c.day,
+          date: c.date,
+          checkTime: c.checkTime,
+          timestamp: c.timestamp,
+          ceiling: c.ceiling,
+          workbookCeiling: null,
+          actual: null,
+        })),
+        latestRecordedActual: { value: 0.048, source: "baseline", checkpointDate: null, checkpointTimestamp: null },
+        workbookDiagnostics: { formulaValuesAvailable: false, formulaMismatchCount: 0, formulaWarnings: [] },
+      },
+      contractMeta: {
+        filename: "plan.xlsx",
+        importedAt: new Date(nowMs - 86400000).toISOString(),
+        trackingStartIso: new Date(contract.trackingStartMs).toISOString(),
+        resetAtIso: new Date(contract.resetAtMs).toISOString(),
+        checkTime: "12:00",
+        baseline: 0.048,
+        hardLimit: 1,
+        safetyReserve: 0,
+        plannedCeiling: 1,
+      },
+      providerSnapshotsNewestFirst: [priorCycle],
+      nowMs,
+    });
+    assert.equal(view.hasContract, true);
+    assert.equal(view.comparison?.status, "SYNC_STALE");
+    assert.equal(view.comparison?.providerMonthly, null);
+    assert.equal(view.comparison?.safeHeadroom, null);
+    assert.equal(view.comparison?.isRollover, false);
+    // Display history is preserved intentionally; comparison truth is scoped.
+    assert.equal(view.providerHistory.length, 1);
+  });
+
+  it("agrees on the exact 2pp boundary in live comparison and history rows", async () => {
+    // 0.08 - 0.06 is exactly 2pp mathematically (0.020000000000000004 in
+    // binary fp): both engines must say NEAR_PLAN.
+    const base: V2Contract = {
+      baseline: 0,
+      trackingStartMs: 0,
+      resetAtMs: 100 * 86400000,
+      checkTime: "12:00",
+      hardLimit: 1,
+      safetyReserve: 0,
+      plannedCeiling: 1,
+      checkpoints: [
+        { day: 1, date: "2026-09-05", checkTime: "12:00", timestampMs: 10 * 86400000, timestamp: new Date(10 * 86400000).toISOString(), ceiling: 0.08 },
+      ],
+    };
+    const nowMs = 10 * 86400000 + 1000;
+    const live = evaluateComparison({
+      contract: base,
+      nowMs,
+      provider: {
+        monthlyFraction: 0.06,
+        monthlyStatus: "ok",
+        providerResetsAtMs: 90 * 86400000,
+        providerResetsAtIso: new Date(90 * 86400000).toISOString(),
+        observedAtMs: nowMs - 1000,
+      },
+    });
+    assert.equal(live.status, "NEAR_PLAN");
+    const rows = buildV2CheckpointRows({
+      contract: base,
+      comparison: live,
+      providerHistoryNewestFirst: [
+        {
+          id: "s",
+          observed_at: new Date(nowMs - 1000).toISOString(),
+          fetched_at: new Date(nowMs - 1000).toISOString(),
+          monthly_percent: 0.06,
+          monthly_status: "ok",
+          provider_resets_at: new Date(90 * 86400000).toISOString(),
+          source: "opencode_api",
+          fetch_duration_ms: 10,
+          created_at: new Date(nowMs - 1000).toISOString(),
+        },
+      ],
+      nowMs,
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.isCurrent, true);
+    assert.equal(rows[0]!.status, "Near plan");
+    // No hardcoded threshold in the row builder: the band is shared.
+    const viewSource = await readFile(new URL("../lib/opencode-go/v2-view.ts", import.meta.url), "utf8");
+    assert.match(viewSource, /V2_NEAR_PLAN_HEADROOM/);
+    assert.match(viewSource, /V2_HEADROOM_LOWER_EPS/);
+    assert.match(viewSource, /V2_HEADROOM_UPPER_EPS/);
+    assert.doesNotMatch(viewSource, /0\.02/);
   });
 
   it("builds checkpoint rows and views without fabricating history", () => {
