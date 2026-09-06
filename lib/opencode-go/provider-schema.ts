@@ -174,6 +174,7 @@ export async function fetchProviderMonthly(args: {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   let response: Response;
+  let fetchedAtMs = startedAt;
   try {
     response = await fetchFn(url, {
       method: "GET",
@@ -183,6 +184,9 @@ export async function fetchProviderMonthly(args: {
       },
       signal: controller.signal,
     });
+    // Capture arrival immediately: JSON parsing/validation below must not
+    // shift observed_at if it crosses a checkpoint boundary.
+    fetchedAtMs = Date.now();
   } catch (error) {
     if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
       throw new OpenCodeGoProviderError("timeout", "OpenCode usage request timed out");
@@ -192,7 +196,7 @@ export async function fetchProviderMonthly(args: {
     clearTimeout(timer);
   }
 
-  const fetchDurationMs = Date.now() - startedAt;
+  const fetchDurationMs = fetchedAtMs - startedAt;
 
   if (!response.ok) {
     throw providerHttpError(response.status);
@@ -206,7 +210,7 @@ export async function fetchProviderMonthly(args: {
   }
 
   const monthly = parseProviderMonthlyPayload(payload);
-  return { monthly, fetchDurationMs, fetchedAtMs: Date.now() };
+  return { monthly, fetchDurationMs, fetchedAtMs };
 }
 
 /**
