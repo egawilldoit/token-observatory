@@ -2,38 +2,36 @@
 --
 -- 1. DB percent contract: monthly_percent is a normalized fraction 0..1.
 --    OpenCode /usage reports an official quota percentage; exhaustion is
---    100% (fraction 1) or a rate-limited status, so values above 1 have no
---    meaning and are rejected.
+--    100% (fraction 1) or a rate-limited status, so values above 1 are invalid.
 --
---    Existing rows above 1 (possible only if a pre-014 build stored an
---    out-of-contract reading) are clamped to 1 inside this same transaction
---    before the constraint is added, so the migration cannot fail on
---    unexpected data. The append-only trigger is disabled and re-enabled
---    around that one-time backfill only.
-
--- One-time backfill for pre-existing out-of-contract rows.
-alter table public.opencode_go_provider_snapshots
-  disable trigger opencode_go_provider_snapshots_no_mutation;
-
-update public.opencode_go_provider_snapshots
-  set monthly_percent = 1
-  where monthly_percent > 1;
-
-alter table public.opencode_go_provider_snapshots
-  enable trigger opencode_go_provider_snapshots_no_mutation;
-
-alter table public.opencode_go_provider_snapshots
-  drop constraint if exists opencode_go_provider_snapshots_percent_check;
+--    Provider snapshots are append-only evidence. This migration MUST NOT
+--    rewrite historical observations to satisfy the tighter contract. If an
+--    out-of-contract row already exists, fail loudly so it can be reviewed
+--    explicitly instead of destroying the original evidence.
 --
--- 2. Atomic append (concurrency fix): manual refresh and cron both ran
---    read -> decide -> insert as separate operations, so concurrent callers
---    could read the same latest row and append duplicates. The function
---    below takes a transaction-scoped advisory lock, re-reads the latest
---    snapshot inside the lock, enforces the cooldown/append rule there, and
---    inserts at most once. Callers use it when present and keep the legacy
---    read-decide-insert path only as a pre-migration fallback.
+-- 2. Atomic append (concurrency fix): manual refresh and cron both previously
+--    ran read -> decide -> insert as separate operations, so concurrent callers
+--    could read the same latest row and append duplicates. The function below
+--    takes a transaction-scoped advisory lock, re-reads the latest snapshot
+--    inside the lock, enforces the cooldown/append rule there, and inserts at
+--    most once.
 --
 -- Forward-only follow-up to 20260906_013_*. Earlier migrations are untouched.
+
+-- Preserve append-only evidence: reject incompatible historical rows rather
+-- than mutating them in-place.
+do $$
+begin
+  if exists (
+    select 1
+    from public.opencode_go_provider_snapshots
+    where monthly_percent < 0 or monthly_percent > 1
+  ) then
+    raise exception
+      'Invalid historical OpenCode Go provider snapshots require manual review before applying the 0..1 percent contract';
+  end if;
+end
+$$;
 
 alter table public.opencode_go_provider_snapshots
   drop constraint if exists opencode_go_provider_snapshots_percent_check;
