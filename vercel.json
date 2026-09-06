@@ -5,5 +5,11 @@
       "*": false,
       "main": true
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/opencode-go/collect",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }
