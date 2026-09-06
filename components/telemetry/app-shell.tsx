@@ -74,13 +74,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mt-auto">
-            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-              <p className="text-[10px] leading-5 text-slate-500">
-                Absolute observations.
-                <br />
-                Latest accepted row wins.
-              </p>
-            </div>
             <LogoutButton compact />
           </div>
         </aside>
