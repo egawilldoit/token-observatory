@@ -1277,12 +1277,12 @@ describe("v2 persistence and background collection", () => {
     assert.match(sql, /append_opencode_go_provider_snapshot/);
     assert.match(sql, /pg_advisory_xact_lock/);
     assert.match(sql, /monthly_percent >= 0 and monthly_percent <= 1/);
-    // Pre-existing out-of-contract rows are clamped inside the migration so
-    // the new constraint cannot fail on unexpected data; append-only is
-    // restored immediately around the one-time backfill.
-    assert.match(sql, /where monthly_percent > 1/);
-    assert.match(sql, /disable trigger opencode_go_provider_snapshots_no_mutation/);
-    assert.match(sql, /enable trigger opencode_go_provider_snapshots_no_mutation/);
+    // Pre-existing out-of-contract rows fail loudly for manual review;
+    // append-only evidence is never rewritten in place.
+    assert.match(sql, /raise exception/);
+    assert.match(sql, /manual review/);
+    assert.doesNotMatch(sql, /disable trigger/i);
+    assert.doesNotMatch(sql, /set monthly_percent/i);
     assert.match(sql, /grant execute on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /revoke all on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /set search_path = pg_catalog/);
@@ -1457,25 +1457,27 @@ describe("v2 security: no secret exposure", () => {
 // ---------------------------------------------------------------------------
 
 describe("v2 ui contract", () => {
-  it("answers the four questions above the fold in order", async () => {
+  it("answers the five questions above the fold in one console", async () => {
     const source = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
     for (const copy of [
-      "Monthly contract vs current usage",
-      "Current monthly",
+      "Monthly plan vs reality",
+      "Current",
       "Safe now",
-      "Safe headroom",
-      "Today",
-      "Next safe checkpoint",
-      "Plan vs reality",
+      "Headroom",
+      "Active ceiling",
+      "Next ceiling activates",
       "Monthly Safe Plan",
-      "Provider remaining",
-      "Safe contract headroom",
+      "About data",
       "CheckpointTable",
+      "ComparisonBar",
       "RefreshButton",
+      "ReplacePlan",
       "{history}",
     ]) {
       assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+    // One connected console, not disconnected oversized cards.
+    assert.doesNotMatch(source, /Current monthly/);
     const refresh = await readFile(new URL("../components/opencode-go/refresh-button.tsx", import.meta.url), "utf8");
     assert.match(refresh, /Refresh usage/);
     const table = await readFile(new URL("../components/opencode-go/checkpoint-table.tsx", import.meta.url), "utf8");
@@ -1483,6 +1485,48 @@ describe("v2 ui contract", () => {
     const historyPanel = await readFile(new URL("../components/opencode-go/import-history.tsx", import.meta.url), "utf8");
     assert.match(historyPanel, /Import history/);
     assert.doesNotMatch(source, /5-hour|weekly|forecast|notification|per-request/i);
+    // No developer copy in primary UI.
+    assert.doesNotMatch(source, /Absolute observations|Latest accepted row wins/);
+  });
+
+  it("keeps a single LIVE indicator outside the status chip", async () => {
+    const status = await readFile(new URL("../components/opencode-go/tracker-status.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(status, /FRESHNESS_META|syncedAgo/);
+    const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(dashboard, /aria-live/);
+  });
+
+  it("labels ACTIVE vs UPCOMING unambiguously with accessible fallbacks", async () => {
+    const table = await readFile(new URL("../components/opencode-go/checkpoint-table.tsx", import.meta.url), "utf8");
+    assert.match(table, /ACTIVE/);
+    assert.match(table, /Upcoming/);
+    assert.match(table, /No provider observation/);
+    assert.doesNotMatch(table, />current</);
+  });
+
+  it("separates provider remaining from safe headroom in the comparison bar", async () => {
+    const bar = await readFile(new URL("../components/opencode-go/comparison-bar.tsx", import.meta.url), "utf8");
+    assert.match(bar, /Provider remaining/);
+    assert.match(bar, /Safe headroom/);
+    assert.doesNotMatch(bar, /allowance/i);
+    // Neutral used track; status color lives on the headroom zone and dot only.
+    assert.match(bar, /bg-slate-800/);
+    assert.match(bar, /headroomTone/);
+    assert.match(bar, /bg-amber-300/);
+  });
+
+  it("removes developer copy from primary navigation surfaces", async () => {
+    const shell = await readFile(new URL("../components/telemetry/app-shell.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(shell, /Absolute observations|Latest accepted row wins/);
+    const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(dashboard, /About data/);
+  });
+
+  it("gives the mobile nav a scroll affordance instead of clipping items", async () => {
+    const shell = await readFile(new URL("../components/telemetry/app-shell.tsx", import.meta.url), "utf8");
+    assert.match(shell, /overflow-x-auto/);
+    assert.match(shell, /pointer-events-none/);
+    assert.match(shell, /from-\[#fbfcfe\] to-transparent/);
   });
 
   it("uses whole-percent precision for raw provider readings only", async () => {
@@ -1491,15 +1535,21 @@ describe("v2 ui contract", () => {
     assert.equal(formatWholePercent(1), "100%");
     const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
     assert.match(dashboard, /formatWholePercent\(comparison\.providerMonthly\)/);
-    assert.match(dashboard, /formatWholePercent\(comparison\.providerRemaining\)/);
+    assert.match(dashboard, /remaining=\{comparison\.providerRemaining\}/);
     // Contract ceilings and headroom keep decimals.
     assert.match(dashboard, /formatPercent\(comparison\.activeCeiling\)/);
+    const bar = await readFile(new URL("../components/opencode-go/comparison-bar.tsx", import.meta.url), "utf8");
+    assert.match(bar, /formatWholePercent\(remaining\)/);
     const table = await readFile(new URL("../components/opencode-go/checkpoint-table.tsx", import.meta.url), "utf8");
     assert.match(table, /formatWholePercent\(row\.providerObservation\)/);
     assert.match(table, /formatPercent\(row\.ceiling\)/);
     const chart = await readFile(new URL("../components/opencode-go/pace-chart.tsx", import.meta.url), "utf8");
-    assert.match(chart, /Math\.round\(p\.providerObservation \* 100\)/);
+    assert.match(chart, /formatWholePercent\(p\.providerObservation/);
     assert.doesNotMatch(chart, /provider \$\{[^}]*toFixed/);
+    // Tooltips pair whole-percent actuals with decimal safe ceilings.
+    assert.match(chart, /Provider usage/);
+    assert.match(chart, /Safe ceiling/);
+    assert.match(chart, /Headroom/);
   });
 
   it("uses one server/domain comparison model (no client duplication)", async () => {
@@ -1517,24 +1567,113 @@ describe("v2 ui contract", () => {
     assert.match(page, /buildV2CheckpointRows/);
   });
 
-  it("renders an accessible, compact plan-vs-reality chart", async () => {
+  it("renders an intentional plan-vs-reality chart with a fixed scale", async () => {
     const source = await readFile(new URL("../components/opencode-go/pace-chart.tsx", import.meta.url), "utf8");
+    assert.match(source, /role="group"/);
+    // Dots keep their own img role with labels; only the outer svg changed.
     assert.match(source, /role="img"/);
     assert.match(source, /<title>/);
-    assert.match(source, /today/);
+    assert.match(source, /Today/);
     assert.match(source, /tabIndex/);
-    assert.match(source, /H = 120/);
-    assert.doesNotMatch(source, /H = 220/);
+    assert.match(source, /DESKTOP = \{ W: 720, H: 300/);
+    assert.match(source, /MOBILE = \{ W: 420, H: 290/);
+    assert.match(source, /matchMedia\("\(max-width: 640px\)"\)/);
+    // Fixed 0/25/50/75/100 axis, never auto-scaled oddities.
+    assert.match(source, /0\.25, 0\.5, 0\.75/);
+    // Honest actuals: dots always, a connecting line only for 3+ observations.
+    assert.match(source, /observed\.length >= 3/);
+    // ACTIVE sits left of its line; Today stays above/right of the dashed line.
+    assert.match(source, /textAnchor="end"/);
   });
 
-  it("supports desktop tables and mobile cards with current highlighting", async () => {
+  it("exposes bar values as text instead of hiding them in an image role", async () => {
+    const bar = await readFile(new URL("../components/opencode-go/comparison-bar.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(bar, /role="img"/);
+    assert.match(bar, /<figcaption/);
+  });
+
+  it("marks an ended plan instead of calling it active", async () => {
+    const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(dashboard, /RESET_REQUIRED/);
+    assert.match(dashboard, /Ended/);
+    assert.match(dashboard, /formatCasablancaMonthDay\(contractMeta\.trackingStartIso\)/);
+    assert.match(dashboard, /formatCasablancaMonthDay\(contractMeta\.resetAtIso\)/);
+    assert.doesNotMatch(dashboard, /trackingStartIso\.slice\(0, 10\)/);
+  });
+
+  it("draws honest provider history: 1 point, 2 points, 3+ line", async () => {
+    const { PaceChart } = await import("../components/opencode-go/pace-chart.js");
+    const { createElement } = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const base = (i: number) => ({
+      date: `2026-09-0${i + 1}`,
+      timestampMs: Date.UTC(2026, 8, i + 1, 12),
+      ceiling: 0.1 + i * 0.05,
+      providerObservation: null as number | null,
+      status: "On track" as const,
+      headroom: 0.03,
+    });
+    const one = [base(0)];
+    one[0]!.providerObservation = 0.09;
+    const oneHtml = renderToStaticMarkup(createElement(PaceChart, { points: one, nowMs: Date.UTC(2026, 8, 1, 13) }));
+    assert.equal(oneHtml.match(/<circle/g)?.length, 1);
+    assert.doesNotMatch(oneHtml, /stroke="#059669"/);
+    const two = [base(0), base(1)];
+    two[0]!.providerObservation = 0.09;
+    two[1]!.providerObservation = 0.12;
+    const twoHtml = renderToStaticMarkup(createElement(PaceChart, { points: two, nowMs: Date.UTC(2026, 8, 2, 13) }));
+    assert.equal(twoHtml.match(/<circle/g)?.length, 2);
+    assert.doesNotMatch(twoHtml, /stroke="#059669"/);
+    const three = [base(0), base(1), base(2)];
+    three[0]!.providerObservation = 0.09;
+    three[1]!.providerObservation = 0.12;
+    three[2]!.providerObservation = 0.16;
+    const threeHtml = renderToStaticMarkup(createElement(PaceChart, { points: three, nowMs: Date.UTC(2026, 8, 3, 13) }));
+    assert.equal(threeHtml.match(/<circle/g)?.length, 3);
+    assert.match(threeHtml, /stroke="#059669"/);
+  });
+
+  it("supports desktop tables and mobile cards with ACTIVE highlighting", async () => {
     const source = await readFile(new URL("../components/opencode-go/checkpoint-table.tsx", import.meta.url), "utf8");
     assert.match(source, /hidden.*md:block/);
     assert.match(source, /md:hidden/);
     assert.match(source, /aria-current/);
-    for (const col of ["Checkpoint", "Safe ceiling", "Provider observation", "Headroom", "Status"]) {
+    for (const col of ["Date", "Safe ceiling", "Provider observation", "Headroom", "Status"]) {
       assert.match(source, new RegExp(col));
     }
+    // Tabular numerals for ledger alignment.
+    assert.match(source, /tabular-nums/);
+  });
+
+  it("collapses history to recent plus ACTIVE plus next five by default", async () => {
+    const { CheckpointTable, selectDefaultRows } = await import("../components/opencode-go/checkpoint-table.js");
+    const { createElement } = await import("react");
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const day = 86400000;
+    const t0 = Date.UTC(2026, 7, 30, 12);
+    const rows = Array.from({ length: 29 }, (_, i) => ({
+      day: i + 1,
+      date: `2026-08-${String(31 + i).padStart(2, "0")}`,
+      timestamp: new Date(t0 + (i + 1) * day).toISOString(),
+      ceiling: 0.05 + i * 0.03,
+      providerObservation: null as number | null,
+      headroom: null as number | null,
+      status: i < 10 ? "—" : "Upcoming",
+      isCurrent: i === 9,
+      isFuture: i > 9,
+    }));
+    const windowed = selectDefaultRows(rows);
+    assert.equal(windowed.length, 9);
+    assert.ok(windowed.some((r) => r.isCurrent));
+    assert.equal(windowed.filter((r) => r.isFuture).length, 5);
+    assert.equal(windowed.filter((r) => !r.isFuture && !r.isCurrent).length, 3);
+    const collapsed = renderToStaticMarkup(createElement(CheckpointTable, { checkpoints: rows }));
+    assert.match(collapsed, /Show all 29 checkpoints/);
+    assert.match(collapsed, /aria-expanded="false"/);
+    assert.doesNotMatch(collapsed, /2026-08-31/);
+    const expanded = renderToStaticMarkup(createElement(CheckpointTable, { checkpoints: rows, defaultExpanded: true }));
+    assert.match(expanded, /Show less/);
+    assert.match(expanded, /2026-08-31/);
   });
 
   it("combines status text, icon, and visual treatment (never color alone)", async () => {
@@ -1738,6 +1877,33 @@ describe("v2 ui contract", () => {
     assert.match(viewSource, /V2_HEADROOM_LOWER_EPS/);
     assert.match(viewSource, /V2_HEADROOM_UPPER_EPS/);
     assert.doesNotMatch(viewSource, /0\.02/);
+  });
+
+  it("formats countdowns naturally on every boundary", async () => {
+    const { countdownTo, describeCheckpointDay, formatCasablancaMonthDay, formatCheckpointDate } = await import(
+      "../lib/opencode-go/format.js"
+    );
+    assert.equal(countdownTo(null), "Cycle ends at reset");
+    assert.equal(countdownTo(0), "now");
+    assert.equal(countdownTo(10 * 3600000), "in 10h");
+    assert.equal(countdownTo((3600000 + 12 * 60000)), "in 1h 12m");
+    assert.equal(countdownTo(24 * 60000), "in 24m");
+    assert.equal(countdownTo(59 * 60000), "in 59m");
+    assert.equal(countdownTo(60 * 60000), "in 1h");
+    assert.equal(countdownTo(26 * 3600000), "in 1d 2h");
+    assert.equal(countdownTo(24 * 3600000), "in 1d");
+    assert.equal(countdownTo(-12 * 60000), "12m ago");
+    assert.equal(formatCheckpointDate("2026-09-05"), "Sep 5");
+    assert.equal(formatCheckpointDate("2026-08-31"), "Aug 31");
+    const noon = Date.UTC(2026, 8, 6, 12, 0, 0);
+    assert.equal(describeCheckpointDay(noon, noon + 3600000), "Today");
+    assert.equal(describeCheckpointDay(noon, noon - 2 * 3600000), "Today");
+    assert.equal(describeCheckpointDay(noon, noon + 20 * 3600000), "Sep 6");
+    assert.equal(describeCheckpointDay(noon, noon - 20 * 3600000), "Sep 6");
+    // Casablanca-local days, not UTC slices: 00:30 Casablanca is still Aug 30
+    // even though the UTC instant falls on Aug 29.
+    assert.equal(formatCasablancaMonthDay("2026-08-29T23:30:00.000Z"), "Aug 30");
+    assert.equal(formatCasablancaMonthDay("2026-08-30T10:29:00.000Z"), "Aug 30");
   });
 
   it("builds checkpoint rows and views without fabricating history", () => {
