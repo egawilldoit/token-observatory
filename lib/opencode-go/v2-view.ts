@@ -308,18 +308,26 @@ export type V2ChartPoint = {
   timestampMs: number;
   ceiling: number;
   providerObservation: number | null;
+  /** Display-only row status/headroom for tooltips (server-computed). */
+  status: string | null;
+  headroom: number | null;
 };
 
 export function buildV2ChartPoints(rows: V2CheckpointRow[], contract: V2Contract): V2ChartPoint[] {
   const byDate = new Map(rows.map((r) => [r.date, r]));
   return [...contract.checkpoints]
     .sort((a, b) => a.timestampMs - b.timestampMs)
-    .map((c) => ({
-      date: c.date,
-      timestampMs: c.timestampMs,
-      ceiling: c.ceiling,
-      providerObservation: byDate.get(c.date)?.providerObservation ?? null,
-    }));
+    .map((c) => {
+      const row = byDate.get(c.date);
+      return {
+        date: c.date,
+        timestampMs: c.timestampMs,
+        ceiling: c.ceiling,
+        providerObservation: row?.providerObservation ?? null,
+        status: row?.status ?? null,
+        headroom: row?.headroom ?? null,
+      };
+    });
 }
 
 export type { V2Comparison };

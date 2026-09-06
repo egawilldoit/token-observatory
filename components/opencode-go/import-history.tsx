@@ -30,6 +30,21 @@ function shortTime(iso: string): string {
   }).format(new Date(iso));
 }
 
+function statusLabel(status: string): string {
+  switch (status) {
+    case "processed":
+      return "Processed";
+    case "exact_duplicate":
+      return "Exact duplicate";
+    case "superseded":
+      return "Superseded";
+    case "corrected":
+      return "Corrected";
+    default:
+      return status;
+  }
+}
+
 /**
  * Import history (V2): compact and product-focused. Workbook uploads are the
  * Monthly Safe Plan, secondary to the daily comparison. Technical details
@@ -40,30 +55,20 @@ export function ImportHistory({ rows }: { rows: OpenCodeGoHistoryRow[] }) {
   return (
     <section
       aria-label="Import history"
-      className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.025)]"
+      className="mt-3 rounded-xl border border-slate-200/90 bg-white px-4 py-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
     >
-      <h2 className="font-semibold text-slate-950">Import history</h2>
-      <p className="mt-1 text-xs text-slate-500">
-        Monthly Safe Plan uploads. Your plan only changes when you replace it.
-      </p>
+      <h2 className="text-sm font-semibold text-slate-950">Import history</h2>
       {visible.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-500">No safe plan uploads yet.</p>
+        <p className="mt-2 text-sm text-slate-500">No safe plan uploads yet.</p>
       ) : (
-        <ul className="mt-3 divide-y divide-slate-100 text-xs">
+        <ul className="mt-1 divide-y divide-slate-100 text-xs">
           {visible.map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-3 py-2">
-              <div className="min-w-0">
-                <p className="truncate font-medium text-slate-800">{row.filename ?? "—"}</p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  {shortTime(row.created_at)} ·{" "}
-                  {row.tracking_start && row.reset_at
-                    ? `${shortDate(row.tracking_start)} → ${shortDate(row.reset_at)}`
-                    : "—"}
-                </p>
-              </div>
-              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium text-slate-600">
-                {row.status}
-              </span>
+            <li key={row.id} className="flex items-baseline justify-between gap-3 py-1.5">
+              <p className="min-w-0 truncate text-slate-700">
+                {shortDate(row.created_at)} ·{" "}
+                <span className="font-medium text-slate-900">{row.filename ?? "—"}</span>
+              </p>
+              <span className="shrink-0 text-slate-500">{statusLabel(row.status)}</span>
             </li>
           ))}
         </ul>
