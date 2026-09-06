@@ -227,8 +227,34 @@ immutable processed snapshot.
 
 The expected checkpoint set is generated from tracking start, reset, and the
 daily check time in `Africa/Casablanca` (strictly between the two bounds);
-the workbook table must match it exactly. Freshness and the six-state status
-model (`RESET_REQUIRED` → `LIMIT_EXCEEDED` → `UPDATE_DUE` → `OVER_PACE` →
-`NEAR_LIMIT` → `ON_TRACK`) evaluate against server time. Active-cycle
+the workbook table must match it exactly. Active-cycle
 selection orders accepted snapshots by `tracking_start DESC, created_at
 DESC`. Workbook formulas never override application values.
+
+## OpenCode Go Tracker V2 (monthly comparison)
+
+V2 is MONTHLY ONLY: Excel is the monthly safe contract, the OpenCode Go API
+is real current monthly usage, and `lib/opencode-go/comparison.ts` is the
+single server/domain comparison model. Rolling/weekly windows are ignored.
+
+Provider observations live in append-only `opencode_go_provider_snapshots`
+(monthly percent as a fraction, status, provider reset, source
+`opencode_api`, fetch duration). `observed_at` is the collection-request
+start and `fetched_at` the response arrival (the API supplies no observation
+timestamp). They never mutate the contract and carry no
+contract foreign key, so new-cycle observations cannot attach to a previous
+contract. Refresh paths: page auto-refresh at >=2min, manual Refresh usage
+with a 45s cooldown, and a Hobby-safe daily Vercel Cron
+(`CRON_SECRET`-only) plus page-load/manual fallback. Freshness is LIVE <5m, RECENT 5–30m,
+STALE >30m. Status precedence is `RESET_REQUIRED` → `LIMIT_EXCEEDED` →
+`SYNC_STALE` → `OVER_PACE` → `NEAR_PLAN` → `ON_TRACK` with headroom in
+percentage points (`safe_ceiling - provider_monthly`). `resetsAt` jitter is
+canonicalized to whole seconds with a 60s same-window tolerance. Rollover
+uses normalized reset-window advancement with temporal validation (a usage
+drop is supporting evidence only, never required); a provider reset that
+merely differs from the contract reset in the same cycle is not a reset.
+Checkpoint history assigns the first snapshot in
+`[checkpoint, next)` inside the contract window only. Raw provider readings
+render whole-percent; ceilings/headroom keep decimals. The V1 workbook status
+model and import semantics remain for manual Actual Usage evidence; V2
+product decisions use the comparison engine.

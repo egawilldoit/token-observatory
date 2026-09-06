@@ -47,8 +47,10 @@ a three-calendar-day overlap.
 3. Configure:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - `SUPABASE_SECRET_KEY`
-   - `TOKEN_OBSERVATORY_ALLOWED_EMAILS`
+  - `SUPABASE_SECRET_KEY`
+  - `TOKEN_OBSERVATORY_ALLOWED_EMAILS`
+  - `OPENCODE_GO_API_KEY` (server-only; live monthly usage, never exposed)
+  - `CRON_SECRET` (server-only; protects background collection)
 4. Disable new-user signups in the dedicated Supabase Auth project, then create
    the allowed user account(s) administratively. The application also redirects
    all signup UI routes back to login.
@@ -67,6 +69,7 @@ supabase/migrations/20260905_009_opencode_go_immutable_snapshots.sql
 supabase/migrations/20260905_010_opencode_go_upload_limit.sql
 supabase/migrations/20260905_011_opencode_go_cycle_processing_guard.sql
 supabase/migrations/20260905_012_opencode_go_trigger_search_path.sql
+supabase/migrations/20260906_013_opencode_go_provider_snapshots.sql
 ```
 
 The migrations create:
