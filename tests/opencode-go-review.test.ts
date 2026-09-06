@@ -160,7 +160,7 @@ describe("OpenCode Go review hardening", () => {
     assert.match(migration, /set\s+search_path\s*=\s*pg_catalog/i);
   });
 
-  it("renders V2 comparison copy from the configured checkpoint time (monthly only)", async () => {
+  it("renders Ledger comparison copy with a single LIVE indicator (monthly only)", async () => {
     const statusSource = await readFile(
       new URL("../components/opencode-go/tracker-status.tsx", import.meta.url),
       "utf8",
@@ -170,13 +170,14 @@ describe("OpenCode Go review hardening", () => {
       "utf8",
     );
 
-    // V2 keeps the contract check time as data (no hardcoded wall-clock copy).
-    assert.match(statusSource, /checkTime:\s*string/);
-    assert.doesNotMatch(statusSource, /due at 12:00/);
-    // V2 comparison statuses replace the V1 workbook-freshness copy.
+    // Ledger comparison statuses replace the V1 workbook-freshness copy.
     assert.match(statusSource, /SYNC_STALE/);
     assert.match(statusSource, /RESET_REQUIRED/);
-    assert.match(dashboardSource, /Monthly contract vs current usage/);
-    assert.match(dashboardSource, /Safe headroom/);
+    // Freshness lives exactly once in the console header, never in status.
+    assert.doesNotMatch(statusSource, /FRESHNESS_META|syncedAgo/);
+    assert.doesNotMatch(statusSource, /Ease off to stay safe/);
+    assert.match(dashboardSource, /Monthly plan vs reality/);
+    assert.match(dashboardSource, /Active ceiling/);
+    assert.match(dashboardSource, /Next ceiling activates/);
   });
 });
