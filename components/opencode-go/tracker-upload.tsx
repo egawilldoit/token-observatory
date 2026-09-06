@@ -71,13 +71,13 @@ export function TrackerUpload() {
 
   return (
     <section
-      aria-label="Upload monthly tracker"
+      aria-label="Replace Monthly Safe Plan"
       className="mt-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,23,42,0.025)]"
     >
-      <h2 className="font-semibold text-slate-950">Upload monthly tracker</h2>
+      <h2 className="font-semibold text-slate-950">Replace Monthly Safe Plan</h2>
       <p className="mt-1 text-xs text-slate-500">
-        Accepts the OpenCode Go monthly tracker .xlsx up to 4 MiB. Recorded Actual Usage
-        values become the V1 observation source.
+        Your safe plan only changes when you replace it. Accepts the monthly tracker .xlsx up
+        to 4 MiB. Daily refresh happens automatically — this is not the daily action.
       </p>
       <div
         onDragOver={(e) => {
