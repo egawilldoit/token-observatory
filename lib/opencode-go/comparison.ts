@@ -239,6 +239,20 @@ export function evaluateComparison(args: {
   };
 
   if (!provider) {
+    // An expired contract needs a new safe plan even when no in-window
+    // reading exists (e.g. every snapshot is post-reset): report
+    // RESET_REQUIRED, not SYNC_STALE.
+    if (nowMs >= contract.resetAtMs) {
+      return {
+        ...base,
+        status: "RESET_REQUIRED",
+        safeHeadroom: null,
+        providerRemaining: null,
+        providerMonthly: null,
+        providerStatus: null,
+        isRollover: false,
+      };
+    }
     return {
       ...base,
       status: "SYNC_STALE",

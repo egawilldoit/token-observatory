@@ -211,6 +211,7 @@ describe("v2 provider schema", () => {
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ percent: "19" })), /malformed/);
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ percent: Number.NaN })), /malformed/);
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ percent: -1 })), /malformed/);
+    assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ percent: 101 })), /malformed/);
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ percent: 1001 })), /malformed/);
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ status: "" })), /malformed/);
     assert.throws(() => parseProviderMonthlyPayload(monthlyPayload({ status: 42 })), /malformed/);
@@ -1276,6 +1277,12 @@ describe("v2 persistence and background collection", () => {
     assert.match(sql, /append_opencode_go_provider_snapshot/);
     assert.match(sql, /pg_advisory_xact_lock/);
     assert.match(sql, /monthly_percent >= 0 and monthly_percent <= 1/);
+    // Pre-existing out-of-contract rows are clamped inside the migration so
+    // the new constraint cannot fail on unexpected data; append-only is
+    // restored immediately around the one-time backfill.
+    assert.match(sql, /where monthly_percent > 1/);
+    assert.match(sql, /disable trigger opencode_go_provider_snapshots_no_mutation/);
+    assert.match(sql, /enable trigger opencode_go_provider_snapshots_no_mutation/);
     assert.match(sql, /grant execute on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /revoke all on function public\.append_opencode_go_provider_snapshot/);
     assert.match(sql, /set search_path = pg_catalog/);
@@ -1555,6 +1562,64 @@ describe("v2 ui contract", () => {
     const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
     assert.match(dashboard, /Contract reset/);
     assert.match(dashboard, /Provider reset/);
+  });
+
+  it("reports RESET_REQUIRED for an expired contract even with no in-window reading", () => {
+    const contract = contractFixture();
+    const nowMs = contract.resetAtMs + 3600000;
+    // Every snapshot is post-reset (outside the contract window).
+    const postReset = {
+      id: "post",
+      observed_at: new Date(nowMs - 1000).toISOString(),
+      fetched_at: new Date(nowMs - 1000).toISOString(),
+      monthly_percent: 0.02,
+      monthly_status: "ok",
+      provider_resets_at: new Date(nowMs + 29 * 86400000).toISOString(),
+      source: "opencode_api",
+      fetch_duration_ms: 50,
+      created_at: new Date(nowMs - 1000).toISOString(),
+    };
+    const direct = evaluateComparison({ contract, nowMs, provider: null });
+    assert.equal(direct.status, "RESET_REQUIRED");
+    assert.equal(direct.safeHeadroom, null);
+    const view = buildV2View({
+      contractSnapshot: {
+        timezone: "Africa/Casablanca",
+        trackingStartsAt: new Date(contract.trackingStartMs).toISOString(),
+        resetAt: new Date(contract.resetAtMs).toISOString(),
+        checkTime: "12:00",
+        baselineUsage: contract.baseline,
+        hardLimit: 1,
+        safetyReserve: 0,
+        plannedCeiling: 1,
+        checkpoints: contract.checkpoints.map((c) => ({
+          day: c.day,
+          date: c.date,
+          checkTime: c.checkTime,
+          timestamp: c.timestamp,
+          ceiling: c.ceiling,
+          workbookCeiling: null,
+          actual: null,
+        })),
+        latestRecordedActual: { value: 0.048, source: "baseline", checkpointDate: null, checkpointTimestamp: null },
+        workbookDiagnostics: { formulaValuesAvailable: false, formulaMismatchCount: 0, formulaWarnings: [] },
+      },
+      contractMeta: {
+        filename: "plan.xlsx",
+        importedAt: new Date(nowMs - 86400000).toISOString(),
+        trackingStartIso: new Date(contract.trackingStartMs).toISOString(),
+        resetAtIso: new Date(contract.resetAtMs).toISOString(),
+        checkTime: "12:00",
+        baseline: 0.048,
+        hardLimit: 1,
+        safetyReserve: 0,
+        plannedCeiling: 1,
+      },
+      providerSnapshotsNewestFirst: [postReset],
+      nowMs,
+    });
+    assert.equal(view.comparison?.status, "RESET_REQUIRED");
+    assert.equal(view.comparison?.providerMonthly, null);
   });
 
   it("scopes the live comparison to the active contract window (no prior-cycle leak)", () => {

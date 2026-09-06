@@ -3,7 +3,27 @@
 -- 1. DB percent contract: monthly_percent is a normalized fraction 0..1.
 --    OpenCode /usage reports an official quota percentage; exhaustion is
 --    100% (fraction 1) or a rate-limited status, so values above 1 have no
---    meaning and are rejected. This replaces the previous >= 0 check.
+--    meaning and are rejected.
+--
+--    Existing rows above 1 (possible only if a pre-014 build stored an
+--    out-of-contract reading) are clamped to 1 inside this same transaction
+--    before the constraint is added, so the migration cannot fail on
+--    unexpected data. The append-only trigger is disabled and re-enabled
+--    around that one-time backfill only.
+
+-- One-time backfill for pre-existing out-of-contract rows.
+alter table public.opencode_go_provider_snapshots
+  disable trigger opencode_go_provider_snapshots_no_mutation;
+
+update public.opencode_go_provider_snapshots
+  set monthly_percent = 1
+  where monthly_percent > 1;
+
+alter table public.opencode_go_provider_snapshots
+  enable trigger opencode_go_provider_snapshots_no_mutation;
+
+alter table public.opencode_go_provider_snapshots
+  drop constraint if exists opencode_go_provider_snapshots_percent_check;
 --
 -- 2. Atomic append (concurrency fix): manual refresh and cron both ran
 --    read -> decide -> insert as separate operations, so concurrent callers
