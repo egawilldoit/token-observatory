@@ -257,6 +257,33 @@ export function evaluateComparison(args: {
     };
   }
 
+  // Non-finite stored readings (corrupt data) are unusable: degrade to
+  // SYNC_STALE rather than rendering NaN. An expired contract still reports
+  // RESET_REQUIRED, but with null values.
+  const usable = Number.isFinite(provider.monthlyFraction) && (provider.monthlyFraction as number) >= 0;
+  if (!usable) {
+    if (nowMs >= contract.resetAtMs) {
+      return {
+        ...base,
+        status: "RESET_REQUIRED",
+        safeHeadroom: null,
+        providerRemaining: null,
+        providerMonthly: null,
+        providerStatus: provider.monthlyStatus,
+        isRollover: false,
+      };
+    }
+    return {
+      ...base,
+      status: "SYNC_STALE",
+      safeHeadroom: null,
+      providerRemaining: null,
+      providerMonthly: null,
+      providerStatus: provider.monthlyStatus,
+      isRollover: false,
+    };
+  }
+
   const isRollover = detectProviderRollover(previousProvider, {
     resetsAtMs: provider.providerResetsAtMs,
     monthlyFraction: provider.monthlyFraction,

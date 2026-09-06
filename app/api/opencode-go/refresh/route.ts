@@ -12,10 +12,15 @@ import { isCrossOriginRequest } from "@/lib/http/request";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
 
 async function currentView(supabase: ReturnType<typeof createAdminClient>, nowMs: number) {
-  const [active, providerSnapshots] = await Promise.all([
-    getActiveOpenCodeGoSnapshot(supabase),
-    listProviderSnapshots(supabase, 60),
-  ]);
+  const active = await getActiveOpenCodeGoSnapshot(supabase);
+  // Best-effort provider history: pre-migration deployments still return the
+  // contract with a SYNC_STALE comparison instead of failing.
+  let providerSnapshots: Awaited<ReturnType<typeof listProviderSnapshots>> = [];
+  try {
+    providerSnapshots = await listProviderSnapshots(supabase, 60);
+  } catch {
+    providerSnapshots = [];
+  }
   return buildV2View({
     contractSnapshot: (active?.parsed_snapshot as StoredSnapshot | null) ?? null,
     contractMeta: active

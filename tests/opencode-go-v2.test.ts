@@ -410,6 +410,26 @@ describe("v2 comparison: actual vs safe ceiling", () => {
     }
   });
 
+  it("degrades corrupt stored readings to SYNC_STALE (never NaN)", () => {
+    const contract = contractFixture();
+    const nowMs = contract.checkpoints[2]!.timestampMs + 1000;
+    const corrupt = evaluateComparison({
+      contract,
+      nowMs,
+      provider: reading({ monthlyFraction: Number.NaN, observedAtMs: nowMs - 1000 }),
+    });
+    assert.equal(corrupt.status, "SYNC_STALE");
+    assert.equal(corrupt.safeHeadroom, null);
+    assert.equal(corrupt.providerMonthly, null);
+    const expiredCorrupt = evaluateComparison({
+      contract,
+      nowMs: contract.resetAtMs,
+      provider: reading({ monthlyFraction: Number.NaN, observedAtMs: contract.resetAtMs - 1000 }),
+    });
+    assert.equal(expiredCorrupt.status, "RESET_REQUIRED");
+    assert.equal(expiredCorrupt.safeHeadroom, null);
+  });
+
   it("does not mutate the contract input", () => {
     const contract = contractFixture();
     const frozen = JSON.parse(JSON.stringify(contract)) as V2Contract;

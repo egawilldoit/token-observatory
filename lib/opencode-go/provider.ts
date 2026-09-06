@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   fetchProviderMonthly,
+  OpenCodeGoProviderError,
   type OpenCodeGoProviderFetchResult,
 } from "./provider-schema";
 
@@ -29,7 +30,6 @@ export async function fetchConfiguredProviderMonthly(args: {
 }): Promise<OpenCodeGoProviderFetchResult> {
   const apiKey = getOpenCodeGoApiKey();
   if (!apiKey) {
-    const { OpenCodeGoProviderError } = await import("./provider-schema");
     throw new OpenCodeGoProviderError("not_configured", "OpenCode Go API key is not configured");
   }
   return fetchProviderMonthly({ apiKey, ...args });

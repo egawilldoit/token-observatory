@@ -2,11 +2,8 @@ import { NextResponse } from "next/server";
 
 import { getObservatoryAccess } from "@/lib/auth/require-user";
 import { buildV2View } from "@/lib/opencode-go/v2-view";
-import { getActiveOpenCodeGoSnapshot, listOpenCodeGoImports } from "@/lib/opencode-go/queries";
-import {
-  getLatestTwoProviderSnapshots,
-  listProviderSnapshots,
-} from "@/lib/opencode-go/provider-queries";
+import { getActiveOpenCodeGoSnapshot } from "@/lib/opencode-go/queries";
+import { listProviderSnapshots } from "@/lib/opencode-go/provider-queries";
 import type { StoredSnapshot } from "@/lib/opencode-go/snapshot";
 import { isCrossOriginRequest } from "@/lib/http/request";
 import { createAdminClient, isTelemetryConfigured } from "@/lib/supabase/admin";
@@ -57,9 +54,6 @@ export async function GET() {
     providerSnapshotsNewestFirst: providerSnapshots,
     nowMs,
   });
-
-  void listOpenCodeGoImports;
-  void getLatestTwoProviderSnapshots;
 
   return NextResponse.json({
     nowIso: view.nowIso,
