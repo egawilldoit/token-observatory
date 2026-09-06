@@ -110,10 +110,12 @@ export function parseProviderMonthlyPayload(payload: unknown): OpenCodeGoProvide
   if (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0) {
     throw new OpenCodeGoProviderError("malformed", "provider monthly percent is malformed");
   }
-  // Upstream clamps 0-100, but the comparison engine must handle >100
-  // defensively (LIMIT_EXCEEDED). Accept a generous upper bound and reject
-  // only absurd values that indicate a contract break.
-  if (percent > 1000) {
+  // Upstream reports an official quota percentage clamped to 0-100, so
+  // anything above 100 is a contract break, not a reading. Reject it here so
+  // it can never reach storage (which constrains fractions to 0..1) or force
+  // a LIMIT decision off fabricated precision. Exhaustion is exactly 100%
+  // (fraction 1) or a rate-limited status.
+  if (percent > 100) {
     throw new OpenCodeGoProviderError("malformed", "provider monthly percent is out of range");
   }
 
@@ -174,6 +176,7 @@ export async function fetchProviderMonthly(args: {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   let response: Response;
+  let fetchedAtMs = startedAt;
   try {
     response = await fetchFn(url, {
       method: "GET",
@@ -183,6 +186,9 @@ export async function fetchProviderMonthly(args: {
       },
       signal: controller.signal,
     });
+    // Capture arrival immediately: JSON parsing/validation below must not
+    // shift observed_at if it crosses a checkpoint boundary.
+    fetchedAtMs = Date.now();
   } catch (error) {
     if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
       throw new OpenCodeGoProviderError("timeout", "OpenCode usage request timed out");
@@ -192,7 +198,7 @@ export async function fetchProviderMonthly(args: {
     clearTimeout(timer);
   }
 
-  const fetchDurationMs = Date.now() - startedAt;
+  const fetchDurationMs = fetchedAtMs - startedAt;
 
   if (!response.ok) {
     throw providerHttpError(response.status);
@@ -206,7 +212,7 @@ export async function fetchProviderMonthly(args: {
   }
 
   const monthly = parseProviderMonthlyPayload(payload);
-  return { monthly, fetchDurationMs, fetchedAtMs: Date.now() };
+  return { monthly, fetchDurationMs, fetchedAtMs };
 }
 
 /**

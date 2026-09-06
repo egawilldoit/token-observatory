@@ -2,7 +2,12 @@
 // The secret itself is read in `provider.ts` (real `import "server-only"`
 // boundary) and passed in; this module never touches client-safe surfaces.
 
-import { shouldStoreProviderSnapshot, V2_REFRESH_COOLDOWN_MS } from "./comparison";
+import {
+  shouldStoreProviderSnapshot,
+  V2_REFRESH_COOLDOWN_MS,
+  V2_RESET_TOLERANCE_MS,
+  V2_SNAPSHOT_MAX_AGE_MS,
+} from "./comparison";
 import {
   fetchProviderMonthly,
   OpenCodeGoProviderError,
@@ -34,6 +39,35 @@ export type RefreshDeps = {
   fetchFn?: typeof fetch;
 };
 
+type AppendRpcResult =
+  | { supported: true; stored: boolean; snapshot: OpenCodeGoProviderSnapshotRow }
+  | { supported: false };
+
+/**
+ * Atomic append via migration 014 (`append_opencode_go_provider_snapshot`).
+ * Returns `{ supported: false }` when the function does not exist yet so
+ * callers fall back to the legacy path (pre-migration only). Any other
+ * failure is a real storage error and is thrown.
+ */
+async function tryAppendRpc(
+  client: SupabaseAdminLike,
+  params: Record<string, unknown>,
+): Promise<AppendRpcResult> {
+  if (typeof client.rpc !== "function") return { supported: false };
+  const { data, error } = await client.rpc("append_opencode_go_provider_snapshot", params);
+  if (error) {
+    if (/PGRST202|Could not find the function|404/.test(JSON.stringify(error))) {
+      return { supported: false };
+    }
+    throw new Error("Could not store the provider observation.");
+  }
+  const parsed = data as { stored: boolean; snapshot: OpenCodeGoProviderSnapshotRow } | null;
+  if (!parsed || typeof parsed.stored !== "boolean" || !parsed.snapshot) {
+    throw new Error("Could not store the provider observation.");
+  }
+  return { supported: true, stored: parsed.stored, snapshot: parsed.snapshot };
+}
+
 /**
  * Fetch the live monthly usage and append a snapshot when the append rule
  * fires (% / status / reset changed beyond jitter tolerance, or last
@@ -63,13 +97,32 @@ export async function refreshProviderSnapshot(
     return { ok: false, code, message: `${code}: Live usage is temporarily unavailable` };
   }
 
+  const observedAtMs = fetched.fetchedAtMs - fetched.fetchDurationMs;
+  const observedAtIso = new Date(observedAtMs).toISOString();
+  const fetchedAtIso = new Date(fetched.fetchedAtMs).toISOString();
+
+  // Preferred path (migration 014): atomic check-and-append inside one
+  // transaction, so concurrent refreshes cannot double-append.
+  const rpc = await tryAppendRpc(client, {
+    p_monthly_percent: fetched.monthly.monthlyFraction,
+    p_monthly_status: fetched.monthly.monthlyStatus,
+    p_provider_resets_at: fetched.monthly.providerResetsAtIso,
+    p_fetch_duration_ms: Math.max(0, Math.round(fetched.fetchDurationMs)),
+    p_observed_at: observedAtIso,
+    p_fetched_at: fetchedAtIso,
+    p_cooldown_ms: V2_REFRESH_COOLDOWN_MS,
+    p_max_age_ms: V2_SNAPSHOT_MAX_AGE_MS,
+    p_reset_tolerance_ms: V2_RESET_TOLERANCE_MS,
+  });
+  if (rpc.supported) {
+    return { ok: true, stored: rpc.stored, snapshot: rpc.snapshot, fetchDurationMs: fetched.fetchDurationMs };
+  }
+
+  // Legacy fallback (pre-014 only): read-decide-insert is race-prone but
+  // keeps unmigrated environments working.
   const latestTwo = await getLatestTwoProviderSnapshots(client);
   const previous = latestTwo[0] ?? null;
 
-  // Backend refresh cooldown (~30-60s): skip the upstream write path when a
-  // fresh observation already exists. The fetch above already happened; the
-  // cooldown gate lives in the route before fetching. This second check keeps
-  // concurrent refreshes from double-appending.
   if (previous) {
     const ageMs = nowMs - Date.parse(previous.observed_at);
     if (ageMs < 0) {
@@ -99,14 +152,13 @@ export async function refreshProviderSnapshot(
     return { ok: true, stored: false, snapshot: previous, fetchDurationMs: fetched.fetchDurationMs };
   }
 
-  const observedAtMs = fetched.fetchedAtMs - fetched.fetchDurationMs;
   const snapshot = await insertProviderSnapshot(client, {
     monthlyFraction: fetched.monthly.monthlyFraction,
     monthlyStatus: fetched.monthly.monthlyStatus,
     providerResetsAtIso: fetched.monthly.providerResetsAtIso,
     fetchDurationMs: fetched.fetchDurationMs,
-    observedAtIso: new Date(observedAtMs).toISOString(),
-    fetchedAtIso: new Date(fetched.fetchedAtMs).toISOString(),
+    observedAtIso,
+    fetchedAtIso,
   });
   return { ok: true, stored: true, snapshot, fetchDurationMs: fetched.fetchDurationMs };
 }

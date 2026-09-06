@@ -85,7 +85,10 @@ browser grants, append-only trigger. No contract foreign key by design, so a
 new-cycle observation can never attach to a previous contract. History before
 the first snapshot is never fabricated. A snapshot is stored when monthly %
 changes, status changes, reset changes beyond jitter tolerance, or the last
-observation is >1h old.
+observation is >1h old. DB percent contract: `monthly_percent BETWEEN 0 AND
+1` (migration 014; exhaustion is 100% / rate-limited, so >1 is meaningless).
+Concurrent refreshes serialize through `append_opencode_go_provider_snapshot`
+(advisory lock, re-read + rule inside the transaction, at most one insert).
 
 ---
 
@@ -117,8 +120,9 @@ NEAR_PLAN > ON_TRACK.
   previous window must have ended, or the advancement is >= 1 day). A
   provider reset that merely differs from the contract reset within the same
   cycle (different anchors/cadences, e.g. 11:29 vs 12:13) is NOT a reset;
-  both resets are displayed separately. A usage drop is supporting evidence
-  only and is never required.
+  both resets are displayed separately. Usage movement plays no role: a
+  same-window collapse (e.g. 41% -> 29% with unchanged resetsAt) is a
+  mid-cycle move, never a rollover.
 - LIMIT_EXCEEDED: monthly >=100% or provider status rate-limited
 - SYNC_STALE: no sufficiently recent provider reading (>30m or none)
 - OVER_PACE: actual > active safe ceiling
