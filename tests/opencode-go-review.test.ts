@@ -160,7 +160,7 @@ describe("OpenCode Go review hardening", () => {
     assert.match(migration, /set\s+search_path\s*=\s*pg_catalog/i);
   });
 
-  it("renders UPDATE_DUE copy from the configured checkpoint time", async () => {
+  it("renders V2 comparison copy from the configured checkpoint time (monthly only)", async () => {
     const statusSource = await readFile(
       new URL("../components/opencode-go/tracker-status.tsx", import.meta.url),
       "utf8",
@@ -170,10 +170,13 @@ describe("OpenCode Go review hardening", () => {
       "utf8",
     );
 
+    // V2 keeps the contract check time as data (no hardcoded wall-clock copy).
     assert.match(statusSource, /checkTime:\s*string/);
-    assert.match(statusSource, /due at \$\{checkTime\}/);
-    assert.match(statusSource, /at \{checkTime\}/);
     assert.doesNotMatch(statusSource, /due at 12:00/);
-    assert.match(dashboardSource, /checkTime=\{view\.cycle\.checkTime\}/);
+    // V2 comparison statuses replace the V1 workbook-freshness copy.
+    assert.match(statusSource, /SYNC_STALE/);
+    assert.match(statusSource, /RESET_REQUIRED/);
+    assert.match(dashboardSource, /Monthly contract vs current usage/);
+    assert.match(dashboardSource, /Safe headroom/);
   });
 });
