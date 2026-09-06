@@ -1,7 +1,7 @@
 import type { OpenCodeGoV2Status } from "@/lib/opencode-go/comparison";
 import { formatPoints, formatWholePercent } from "@/lib/opencode-go/format";
 
-function actualTone(status: OpenCodeGoV2Status): string {
+function dotTone(status: OpenCodeGoV2Status): string {
   switch (status) {
     case "ON_TRACK":
       return "bg-emerald-500";
@@ -12,6 +12,21 @@ function actualTone(status: OpenCodeGoV2Status): string {
       return "bg-red-500";
     default:
       return "bg-slate-400";
+  }
+}
+
+/** Status color lives on the headroom zone only — never the used track. */
+function headroomTone(status: OpenCodeGoV2Status): string {
+  switch (status) {
+    case "ON_TRACK":
+      return "bg-emerald-200";
+    case "NEAR_PLAN":
+      return "bg-amber-300";
+    case "OVER_PACE":
+    case "LIMIT_EXCEEDED":
+      return "bg-red-300";
+    default:
+      return "bg-slate-200";
   }
 }
 
@@ -44,13 +59,13 @@ export function ComparisonBar({
       <div className="relative h-2.5 rounded-full bg-slate-100" aria-hidden="true">
         {actualPct != null ? (
           <div
-            className={`absolute inset-y-0 left-0 rounded-full ${actualTone(status)} opacity-90`}
+            className="absolute inset-y-0 left-0 rounded-full bg-slate-800"
             style={{ width: `${Math.min(actualPct, safePct)}%` }}
           />
         ) : null}
         {actualPct != null && !over ? (
           <div
-            className="absolute inset-y-0 rounded-full bg-blue-300"
+            className={`absolute inset-y-0 rounded-full ${headroomTone(status)}`}
             style={{ left: `${actualPct}%`, width: `${Math.max(0, safePct - actualPct)}%` }}
           />
         ) : null}
@@ -67,7 +82,7 @@ export function ComparisonBar({
         />
         {actualPct != null ? (
           <div
-            className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-900 shadow-sm"
+            className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm ${dotTone(status)}`}
             style={{ left: `${actualPct}%` }}
             title={`Actual ${Math.round(actualPct)}%`}
           />

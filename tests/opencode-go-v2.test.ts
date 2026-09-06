@@ -1509,6 +1509,10 @@ describe("v2 ui contract", () => {
     assert.match(bar, /Provider remaining/);
     assert.match(bar, /Safe headroom/);
     assert.doesNotMatch(bar, /allowance/i);
+    // Neutral used track; status color lives on the headroom zone and dot only.
+    assert.match(bar, /bg-slate-800/);
+    assert.match(bar, /headroomTone/);
+    assert.match(bar, /bg-amber-300/);
   });
 
   it("removes developer copy from primary navigation surfaces", async () => {
@@ -1516,6 +1520,13 @@ describe("v2 ui contract", () => {
     assert.doesNotMatch(shell, /Absolute observations|Latest accepted row wins/);
     const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
     assert.match(dashboard, /About data/);
+  });
+
+  it("gives the mobile nav a scroll affordance instead of clipping items", async () => {
+    const shell = await readFile(new URL("../components/telemetry/app-shell.tsx", import.meta.url), "utf8");
+    assert.match(shell, /overflow-x-auto/);
+    assert.match(shell, /pointer-events-none/);
+    assert.match(shell, /from-\[#fbfcfe\] to-transparent/);
   });
 
   it("uses whole-percent precision for raw provider readings only", async () => {
@@ -1563,15 +1574,16 @@ describe("v2 ui contract", () => {
     assert.match(source, /role="img"/);
     assert.match(source, /<title>/);
     assert.match(source, /Today/);
-    assert.match(source, /ACTIVE/);
-    assert.match(source, /Next/);
     assert.match(source, /tabIndex/);
-    assert.match(source, /H = 300/);
-    assert.doesNotMatch(source, /H = 120/);
+    assert.match(source, /DESKTOP = \{ W: 720, H: 300/);
+    assert.match(source, /MOBILE = \{ W: 420, H: 290/);
+    assert.match(source, /matchMedia\("\(max-width: 640px\)"\)/);
     // Fixed 0/25/50/75/100 axis, never auto-scaled oddities.
     assert.match(source, /0\.25, 0\.5, 0\.75/);
     // Honest actuals: dots always, a connecting line only for 3+ observations.
     assert.match(source, /observed\.length >= 3/);
+    // ACTIVE sits left of its line; Today stays above/right of the dashed line.
+    assert.match(source, /textAnchor="end"/);
   });
 
   it("exposes bar values as text instead of hiding them in an image role", async () => {
@@ -1591,6 +1603,7 @@ describe("v2 ui contract", () => {
 
   it("draws honest provider history: 1 point, 2 points, 3+ line", async () => {
     const { PaceChart } = await import("../components/opencode-go/pace-chart.js");
+    const { createElement } = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const base = (i: number) => ({
       date: `2026-09-0${i + 1}`,
@@ -1602,20 +1615,20 @@ describe("v2 ui contract", () => {
     });
     const one = [base(0)];
     one[0]!.providerObservation = 0.09;
-    const oneHtml = renderToStaticMarkup(PaceChart({ points: one, nowMs: Date.UTC(2026, 8, 1, 13) }));
+    const oneHtml = renderToStaticMarkup(createElement(PaceChart, { points: one, nowMs: Date.UTC(2026, 8, 1, 13) }));
     assert.equal(oneHtml.match(/<circle/g)?.length, 1);
     assert.doesNotMatch(oneHtml, /stroke="#059669"/);
     const two = [base(0), base(1)];
     two[0]!.providerObservation = 0.09;
     two[1]!.providerObservation = 0.12;
-    const twoHtml = renderToStaticMarkup(PaceChart({ points: two, nowMs: Date.UTC(2026, 8, 2, 13) }));
+    const twoHtml = renderToStaticMarkup(createElement(PaceChart, { points: two, nowMs: Date.UTC(2026, 8, 2, 13) }));
     assert.equal(twoHtml.match(/<circle/g)?.length, 2);
     assert.doesNotMatch(twoHtml, /stroke="#059669"/);
     const three = [base(0), base(1), base(2)];
     three[0]!.providerObservation = 0.09;
     three[1]!.providerObservation = 0.12;
     three[2]!.providerObservation = 0.16;
-    const threeHtml = renderToStaticMarkup(PaceChart({ points: three, nowMs: Date.UTC(2026, 8, 3, 13) }));
+    const threeHtml = renderToStaticMarkup(createElement(PaceChart, { points: three, nowMs: Date.UTC(2026, 8, 3, 13) }));
     assert.equal(threeHtml.match(/<circle/g)?.length, 3);
     assert.match(threeHtml, /stroke="#059669"/);
   });

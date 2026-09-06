@@ -79,35 +79,41 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <main className="min-w-0 flex-1 overflow-x-hidden bg-[#fbfcfe] px-4 py-5 sm:px-6 lg:px-8 lg:py-7 xl:px-9">
-          <div className="mb-5 flex min-w-0 items-center gap-2 overflow-x-auto pb-1 lg:hidden">
-            <div className="mr-1 grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-blue-600 text-white">
-              <Database className="h-4 w-4" />
+          <div className="relative mb-5 min-w-0 lg:hidden">
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+              <div className="mr-1 grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-blue-600 text-white">
+                <Database className="h-4 w-4" />
+              </div>
+              <nav aria-label="Primary" className="flex gap-2">
+                {navigation.map((item) => {
+                  const Icon = item.icon;
+                  const active = pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={[
+                        "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition",
+                        active
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600",
+                      ].join(" ")}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+              <div className="ml-auto shrink-0">
+                <LogoutButton compact />
+              </div>
             </div>
-            <nav aria-label="Primary" className="flex gap-2">
-              {navigation.map((item) => {
-                const Icon = item.icon;
-                const active = pathname.startsWith(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={[
-                      "flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition",
-                      active
-                        ? "border-blue-200 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-600",
-                    ].join(" ")}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
-            <div className="ml-auto shrink-0">
-              <LogoutButton compact />
-            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[#fbfcfe] to-transparent"
+            />
           </div>
           <div className="mx-auto min-w-0 max-w-[1500px]">{children}</div>
         </main>

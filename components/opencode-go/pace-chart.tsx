@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { formatCheckpointDate, formatPoints, formatWholePercent } from "@/lib/opencode-go/format";
 
 export type PlanRealityPoint = {
@@ -11,26 +15,22 @@ export type PlanRealityPoint = {
   headroom?: number | null;
 };
 
-const W = 720;
-const H = 300;
-const PAD_L = 46;
-const PAD_R = 14;
-const PAD_T = 16;
-const PAD_B = 26;
+const DESKTOP = { W: 720, H: 300, PAD_L: 46, PAD_R: 14, PAD_T: 16, PAD_B: 26 };
+/** Taller aspect so the chart stays useful on narrow screens (~225px tall). */
+const MOBILE = { W: 420, H: 290, PAD_L: 42, PAD_R: 12, PAD_T: 18, PAD_B: 30 };
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
-function xFor(i: number, n: number): number {
-  if (n <= 1) return PAD_L;
-  return PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R);
-}
-
-function yFor(v: number): number {
-  const t = Math.max(0, Math.min(1, v));
-  return PAD_T + (1 - t) * (H - PAD_T - PAD_B);
-}
-
-function linePath(points: { x: number; y: number }[]): string {
-  return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+/** SSR-safe viewport flag: desktop first, then follows the viewport. */
+function useCompactChart(): boolean {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 640px)");
+    const sync = () => setCompact(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return compact;
 }
 
 function dotColor(status: string | null | undefined): string {
@@ -53,13 +53,15 @@ function shortDate(date: string): string {
 
 /**
  * Plan vs reality (Ledger).
- * - Fixed 0/25/50/75/100 Y-axis; useful date labels on X.
+ * - Fixed 0/25/50/75/100 Y-axis; useful date labels on X (fewer on mobile).
  * - Continuous Safe Plan line (contract history genuinely exists) with a
  *   restrained safe zone beneath it.
  * - Provider observations are real captures only: one point stays one point,
  *   two points stay two points, three or more connect honestly.
- * - Today, ACTIVE, and next-checkpoint markers; keyboard-focusable points
- *   with full tooltips (date, provider, safe, headroom, status).
+ * - Today, ACTIVE, and next-checkpoint markers. ACTIVE sits left of its line
+ *   and Today above/right of the dashed line so they never compete.
+ * - Keyboard-focusable points with full tooltips (date, provider, safe,
+ *   headroom, status).
  */
 export function PaceChart({
   points,
@@ -68,6 +70,23 @@ export function PaceChart({
   points: PlanRealityPoint[];
   nowMs: number;
 }) {
+  const compact = useCompactChart();
+  const { W, H, PAD_L, PAD_R, PAD_T, PAD_B } = compact ? MOBILE : DESKTOP;
+
+  function xFor(i: number, n: number): number {
+    if (n <= 1) return PAD_L;
+    return PAD_L + (i / (n - 1)) * (W - PAD_L - PAD_R);
+  }
+
+  function yFor(v: number): number {
+    const t = Math.max(0, Math.min(1, v));
+    return PAD_T + (1 - t) * (H - PAD_T - PAD_B);
+  }
+
+  function linePath(pts: { x: number; y: number }[]): string {
+    return pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  }
+
   if (points.length === 0) return null;
 
   const ceilingPts = points.map((p, i) => ({ x: xFor(i, points.length), y: yFor(p.ceiling) }));
@@ -91,7 +110,7 @@ export function PaceChart({
   // A next marker on top of the today marker adds noise, not information.
   const showNext = nextIndex >= 0 && nextX != null && Math.abs(nextX - todayX) >= 10;
 
-  const labelEvery = Math.max(1, Math.ceil(points.length / 7));
+  const labelEvery = Math.max(1, Math.ceil(points.length / (compact ? 3 : 7)));
   const dateFor = (i: number) => shortDate(points[i]!.date);
 
   return (
@@ -159,7 +178,7 @@ export function PaceChart({
       {activeX != null ? (
         <g>
           <line x1={activeX} x2={activeX} y1={PAD_T} y2={H - PAD_B} stroke="#1d4ed8" strokeWidth={1.5} />
-          <text x={activeX + 4} y={PAD_T + 38} fontSize={9} fontWeight={700} fill="#1d4ed8">
+          <text x={activeX - 6} y={PAD_T + (compact ? 56 : 38)} fontSize={9} fontWeight={700} fill="#1d4ed8" textAnchor="end">
             ACTIVE
           </text>
         </g>
