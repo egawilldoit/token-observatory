@@ -98,7 +98,7 @@ export function PaceChart({
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className="mt-3 h-auto w-full"
-      role="img"
+      role="group"
       aria-label="Monthly safe plan versus real provider usage. The blue line is the safe ceiling with the safe zone beneath it. Dots mark real provider observations only."
     >
       <title>Plan versus reality</title>

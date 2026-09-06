@@ -53,18 +53,38 @@ export function countdownTo(msUntil: number | null): string {
 }
 
 /**
+ * Format an ISO instant as "Aug 30" in Casablanca time. Unlike slicing the
+ * ISO date prefix (which is UTC), this respects the workbook wall-clock day.
+ * Presentation only.
+ */
+export function formatCasablancaMonthDay(instantIso: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Casablanca",
+    month: "short",
+    day: "numeric",
+  }).formatToParts(new Date(instantIso));
+  const month = parts.find((p) => p.type === "month")?.value ?? "";
+  const day = parts.find((p) => p.type === "day")?.value ?? "";
+  return `${month} ${day}`;
+}
+
+/**
  * Describe a checkpoint timestamp relative to now in Casablanca time:
  * "Today" when it falls on the current calendar day, otherwise "Sep 6".
+ * Part types (not split display text) keep this ICU-data independent.
  * Presentation only.
  */
 export function describeCheckpointDay(timestampMs: number, nowMs: number): string {
-  const dayKey = (ms: number) =>
-    new Intl.DateTimeFormat("en-CA", {
+  const dayKey = (ms: number) => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Africa/Casablanca",
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).format(new Date(ms));
+    }).formatToParts(new Date(ms));
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  };
   if (dayKey(timestampMs) === dayKey(nowMs)) return "Today";
   const [year, month, day] = dayKey(timestampMs).split("-");
   return formatCheckpointDate(`${year}-${month}-${day}`);

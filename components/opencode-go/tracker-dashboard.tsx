@@ -4,6 +4,7 @@ import type { V2Comparison, V2ContractMeta } from "@/lib/opencode-go/v2-view";
 import {
   countdownTo,
   describeCheckpointDay,
+  formatCasablancaMonthDay,
   formatCasablancaShort,
   formatCheckpointDate,
   formatFreshnessAge,
@@ -169,12 +170,18 @@ export function TrackerDashboard({
       >
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-950">Monthly Safe Plan</h2>
-          <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-            Active
-          </span>
+          {comparison.status === "RESET_REQUIRED" ? (
+            <span className="rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+              Ended
+            </span>
+          ) : (
+            <span className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+              Active
+            </span>
+          )}
         </div>
         <p className="mt-1 text-sm font-medium tabular-nums text-slate-900">
-          {contractMeta.trackingStartIso.slice(0, 10)} → {contractMeta.resetAtIso.slice(0, 10)}
+          {formatCasablancaMonthDay(contractMeta.trackingStartIso)} → {formatCasablancaMonthDay(contractMeta.resetAtIso)}
         </p>
         <p className="mt-0.5 text-xs tabular-nums text-slate-500">
           {contractMeta.checkpointCount} checkpoints · Daily at {contractMeta.checkTime} · Baseline{" "}

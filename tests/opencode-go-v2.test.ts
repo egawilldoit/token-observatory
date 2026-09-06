@@ -1558,6 +1558,8 @@ describe("v2 ui contract", () => {
 
   it("renders an intentional plan-vs-reality chart with a fixed scale", async () => {
     const source = await readFile(new URL("../components/opencode-go/pace-chart.tsx", import.meta.url), "utf8");
+    assert.match(source, /role="group"/);
+    // Dots keep their own img role with labels; only the outer svg changed.
     assert.match(source, /role="img"/);
     assert.match(source, /<title>/);
     assert.match(source, /Today/);
@@ -1570,6 +1572,21 @@ describe("v2 ui contract", () => {
     assert.match(source, /0\.25, 0\.5, 0\.75/);
     // Honest actuals: dots always, a connecting line only for 3+ observations.
     assert.match(source, /observed\.length >= 3/);
+  });
+
+  it("exposes bar values as text instead of hiding them in an image role", async () => {
+    const bar = await readFile(new URL("../components/opencode-go/comparison-bar.tsx", import.meta.url), "utf8");
+    assert.doesNotMatch(bar, /role="img"/);
+    assert.match(bar, /<figcaption/);
+  });
+
+  it("marks an ended plan instead of calling it active", async () => {
+    const dashboard = await readFile(new URL("../components/opencode-go/tracker-dashboard.tsx", import.meta.url), "utf8");
+    assert.match(dashboard, /RESET_REQUIRED/);
+    assert.match(dashboard, /Ended/);
+    assert.match(dashboard, /formatCasablancaMonthDay\(contractMeta\.trackingStartIso\)/);
+    assert.match(dashboard, /formatCasablancaMonthDay\(contractMeta\.resetAtIso\)/);
+    assert.doesNotMatch(dashboard, /trackingStartIso\.slice\(0, 10\)/);
   });
 
   it("draws honest provider history: 1 point, 2 points, 3+ line", async () => {
@@ -1850,7 +1867,7 @@ describe("v2 ui contract", () => {
   });
 
   it("formats countdowns naturally on every boundary", async () => {
-    const { countdownTo, describeCheckpointDay, formatCheckpointDate } = await import(
+    const { countdownTo, describeCheckpointDay, formatCasablancaMonthDay, formatCheckpointDate } = await import(
       "../lib/opencode-go/format.js"
     );
     assert.equal(countdownTo(null), "Cycle ends at reset");
@@ -1870,6 +1887,10 @@ describe("v2 ui contract", () => {
     assert.equal(describeCheckpointDay(noon, noon - 2 * 3600000), "Today");
     assert.equal(describeCheckpointDay(noon, noon + 20 * 3600000), "Sep 6");
     assert.equal(describeCheckpointDay(noon, noon - 20 * 3600000), "Sep 6");
+    // Casablanca-local days, not UTC slices: 00:30 Casablanca is still Aug 30
+    // even though the UTC instant falls on Aug 29.
+    assert.equal(formatCasablancaMonthDay("2026-08-29T23:30:00.000Z"), "Aug 30");
+    assert.equal(formatCasablancaMonthDay("2026-08-30T10:29:00.000Z"), "Aug 30");
   });
 
   it("builds checkpoint rows and views without fabricating history", () => {

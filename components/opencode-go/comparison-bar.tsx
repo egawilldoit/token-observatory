@@ -38,13 +38,9 @@ export function ComparisonBar({
   const actualPct = actual == null ? null : Math.max(0, Math.min(100, actual * 100));
   const over = actual != null && actual > safe;
   const headroomLabel = headroom == null ? "—" : formatPoints(headroom);
-  const summary =
-    actual == null
-      ? `Safe ceiling ${Math.round(safePct)} percent. Waiting for the first provider reading.`
-      : `Actual ${Math.round(actualPct as number)} percent, safe ceiling ${Math.round(safePct)} percent, headroom ${headroomLabel}.`;
 
   return (
-    <figure aria-label={`Usage comparison. ${summary}`} role="img" className="mt-3">
+    <figure className="mt-3">
       <div className="relative h-2.5 rounded-full bg-slate-100" aria-hidden="true">
         {actualPct != null ? (
           <div
