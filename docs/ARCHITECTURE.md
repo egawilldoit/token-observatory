@@ -43,11 +43,12 @@ Weekly, monthly, and lifetime totals are derived from that current daily view.
 12. Rows are classified as new, revised, or unchanged against
     `v_current_daily_usage`. ccusage snapshot absence is not deletion
     evidence: a historical machine × agent × day (or machine × agent ×
-    model × day) missing from a later overlapping export is PRESERVED, not
-    tombstoned. A row is revised only when the incoming snapshot explicitly
-    contains that same key with changed counters. Tombstones require
-    explicit deletion evidence (`allowMissingAsRemoval`) or an explicit
-    repair/unimport operation.
+    model × day) missing from a later overlapping export is PRESERVED by
+    default, not tombstoned. A row is revised only when the incoming
+    snapshot explicitly contains that same key with changed counters.
+    Tombstones are emitted only when a caller explicitly opts in with
+    `allowMissingAsRemoval: true` (reserved for a future explicit
+    repair/unimport flow with genuine deletion evidence).
 13. Revision identity is `import × agent × usage_date`, not the content hash.
     This deliberately supports state reversion such as A → B → A.
 14. One Postgres RPC inserts changed/tombstone observations and marks the import
@@ -152,7 +153,8 @@ and `v_current_daily_model_usage`. The canonical grain is
 `machine_id × agent × model × usage_date`. Model component counters are
 validated against each agent row before promotion. Model revisions are
 diffed independently from agent/day revisions under the same preservation
-rule: a missing model key in overlap never creates a tombstone.
+rule: a missing model key in overlap does not create a tombstone by
+default; tombstones require the explicit `allowMissingAsRemoval` opt-in.
 
 The existing agent/day view remains the authority for global headline totals.
 This is deliberate: ccusage model breakdowns can omit a model-level

@@ -19,9 +19,10 @@ function keyOf(row: Pick<DailyUsageObservationInput, "agent" | "usage_date">) {
 // machine × agent × date (or machine × agent × model × date) inside overlap
 // must PRESERVE the latest accepted observation. A row may only be revised
 // when the incoming snapshot explicitly contains that same key with changed
-// counters. Automatic tombstoning from absence is forbidden; tombstones
-// require explicit deletion evidence (allowMissingAsRemoval) or an explicit
-// repair/unimport operation.
+// counters. Absence does not create a tombstone by default; tombstones
+// are emitted only when a caller explicitly opts in with
+// allowMissingAsRemoval (reserved for a future explicit repair/unimport
+// flow with genuine deletion evidence).
 
 type OverlapCoverage = {
   scopeStart?: string | null;
