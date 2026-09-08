@@ -147,7 +147,7 @@ test("builds a three-calendar-day overlap command", () => {
 });
 
 
-test("tombstones an agent removed from a covered day", () => {
+test("missing agent in overlap is preserved, not tombstoned (absence is not deletion)", () => {
   const parsed = parseCcusageDaily(fixture());
   const current = parsed.rows.map((row) => ({
     ...row,
@@ -157,11 +157,21 @@ test("tombstones an agent removed from a covered day", () => {
 
   const result = diffDailyUsage(incoming, current);
 
-  assert.equal(result.removedRows.length, 1);
-  assert.equal(result.removedRows[0].agent, "opencode");
-  assert.equal(result.removedRows[0].is_tombstone, true);
-  assert.equal(result.afterTotal, 100);
-  assert.equal(result.netChange, -200);
+  assert.equal(result.removedRows.length, 0);
+  assert.equal(result.afterTotal, 300);
+  assert.equal(result.netChange, 0);
+
+  const explicit = diffDailyUsage(incoming, current, {
+    scopeStart: "2026-08-28",
+    scopeEnd: "2026-08-28",
+    allowMissingAsRemoval: true,
+  });
+
+  assert.equal(explicit.removedRows.length, 1);
+  assert.equal(explicit.removedRows[0].agent, "opencode");
+  assert.equal(explicit.removedRows[0].is_tombstone, true);
+  assert.equal(explicit.afterTotal, 100);
+  assert.equal(explicit.netChange, -200);
 });
 
 test("cost-only changes create a new observation version", () => {
@@ -217,7 +227,7 @@ test("rejects missing required token counters", () => {
 });
 
 
-test("tombstones a whole missing day inside an overlapping snapshot", () => {
+test("missing day inside overlap is preserved, not tombstoned", () => {
   const source = parseCcusageDaily(fixture()).rows[0];
   const current: CurrentDailyUsageRow[] = [
     "2026-08-26",
@@ -234,9 +244,18 @@ test("tombstones a whole missing day inside an overlapping snapshot", () => {
 
   const result = diffDailyUsage(incoming, current);
 
-  assert.equal(result.removedRows.length, 1);
-  assert.equal(result.removedRows[0].usage_date, "2026-08-27");
-  assert.equal(result.netChange, -100);
+  assert.equal(result.removedRows.length, 0);
+  assert.equal(result.netChange, 0);
+
+  const explicit = diffDailyUsage(incoming, current, {
+    scopeStart: "2026-08-26",
+    scopeEnd: "2026-08-28",
+    allowMissingAsRemoval: true,
+  });
+
+  assert.equal(explicit.removedRows.length, 1);
+  assert.equal(explicit.removedRows[0].usage_date, "2026-08-27");
+  assert.equal(explicit.netChange, -100);
 });
 
 test("uses the Africa/Casablanca calendar boundary for future-date rejection", () => {
@@ -279,7 +298,7 @@ test("rejects daily rows that disagree with top-level totals", () => {
 });
 
 
-test("tombstones a missing leading day when the server overlap starts earlier than visible rows", () => {
+test("missing leading day is preserved without explicit removal evidence", () => {
   const source = parseCcusageDaily(fixture()).rows[0];
   const current: CurrentDailyUsageRow[] = [
     "2026-08-26",
@@ -298,9 +317,18 @@ test("tombstones a missing leading day when the server overlap starts earlier th
     scopeEnd: "2026-08-28",
   });
 
-  assert.equal(result.removedRows.length, 1);
-  assert.equal(result.removedRows[0].usage_date, "2026-08-26");
-  assert.equal(result.netChange, -100);
+  assert.equal(result.removedRows.length, 0);
+  assert.equal(result.netChange, 0);
+
+  const explicit = diffDailyUsage(incoming, current, {
+    scopeStart: "2026-08-26",
+    scopeEnd: "2026-08-28",
+    allowMissingAsRemoval: true,
+  });
+
+  assert.equal(explicit.removedRows.length, 1);
+  assert.equal(explicit.removedRows[0].usage_date, "2026-08-26");
+  assert.equal(explicit.netChange, -100);
 });
 
 
@@ -325,7 +353,7 @@ test("rejects model breakdown components that do not reconcile to the agent", ()
   );
 });
 
-test("diffs model rows independently and tombstones removed models", () => {
+test("model rows diff independently and preserve missing models by default", () => {
   const parsed = parseCcusageDaily(fixture());
   const current: CurrentDailyModelUsageRow[] = parsed.modelRows.map((row) => ({
     ...row,
@@ -336,10 +364,19 @@ test("diffs model rows independently and tombstones removed models", () => {
   const result = diffDailyModelUsage(incoming, current);
 
   assert.equal(result.unchangedRows.length, 1);
-  assert.equal(result.removedRows.length, 1);
-  assert.equal(result.removedRows[0].model, "deepseek-v4-flash");
-  assert.equal(result.removedRows[0].is_tombstone, true);
-  assert.equal(result.afterTotal, 100);
+  assert.equal(result.removedRows.length, 0);
+  assert.equal(result.afterTotal, 300);
+
+  const explicit = diffDailyModelUsage(incoming, current, {
+    scopeStart: "2026-08-28",
+    scopeEnd: "2026-08-28",
+    allowMissingAsRemoval: true,
+  });
+
+  assert.equal(explicit.removedRows.length, 1);
+  assert.equal(explicit.removedRows[0].model, "deepseek-v4-flash");
+  assert.equal(explicit.removedRows[0].is_tombstone, true);
+  assert.equal(explicit.afterTotal, 100);
 });
 
 test("model migration is forward-only and exposes canonical model state", async () => {

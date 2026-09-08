@@ -12,6 +12,30 @@ function keyOf(row: Pick<DailyUsageObservationInput, "agent" | "usage_date">) {
   return row.agent + "|" + row.usage_date;
 }
 
+// ccusage snapshot absence is not deletion evidence.
+//
+// Normal ccusage exports are NOT authoritative proof that a historical row
+// absent from a later overlapping export should be deleted. A missing
+// machine × agent × date (or machine × agent × model × date) inside overlap
+// must PRESERVE the latest accepted observation. A row may only be revised
+// when the incoming snapshot explicitly contains that same key with changed
+// counters. Absence does not create a tombstone by default; tombstones
+// are emitted only when a caller explicitly opts in with
+// allowMissingAsRemoval (reserved for a future explicit repair/unimport
+// flow with genuine deletion evidence).
+
+type OverlapCoverage = {
+  scopeStart?: string | null;
+  scopeEnd?: string | null;
+  /**
+   * Explicit opt-in for absence-as-removal. Defaults to false.
+   * Normal snapshot reconciliation must leave this false/omitted so
+   * missing keys are preserved. Only an explicit repair/unimport flow with
+   * genuine deletion evidence may pass true.
+   */
+  allowMissingAsRemoval?: boolean;
+};
+
 function tombstoneFor(
   row: CurrentDailyUsageRow,
 ): DailyUsageObservationInput {
@@ -37,10 +61,7 @@ function tombstoneFor(
 export function diffDailyUsage(
   incoming: DailyUsageObservationInput[],
   current: CurrentDailyUsageRow[],
-  coverage?: {
-    scopeStart?: string | null;
-    scopeEnd?: string | null;
-  },
+  coverage?: OverlapCoverage,
 ): DiffSummary {
   const currentByKey = new Map(
     current.map((row) => [keyOf(row), row] as const),
@@ -78,17 +99,22 @@ export function diffDailyUsage(
     projected.set(keyOf(row), row);
   }
 
-  for (const existing of currentByKey.values()) {
-    const key = keyOf(existing);
-    const coveredBySnapshot =
-      scopeStart !== null &&
-      scopeEnd !== null &&
-      existing.usage_date >= scopeStart &&
-      existing.usage_date <= scopeEnd;
+  // Absence inside overlapping coverage is NOT removal unless the caller
+  // explicitly opts in with allowMissingAsRemoval. Normal imports preserve
+  // historical rows by omission.
+  if (coverage?.allowMissingAsRemoval === true) {
+    for (const existing of currentByKey.values()) {
+      const key = keyOf(existing);
+      const coveredBySnapshot =
+        scopeStart !== null &&
+        scopeEnd !== null &&
+        existing.usage_date >= scopeStart &&
+        existing.usage_date <= scopeEnd;
 
-    if (coveredBySnapshot && !incomingKeys.has(key)) {
-      removedRows.push(tombstoneFor(existing));
-      projected.delete(key);
+      if (coveredBySnapshot && !incomingKeys.has(key)) {
+        removedRows.push(tombstoneFor(existing));
+        projected.delete(key);
+      }
     }
   }
 
@@ -148,10 +174,7 @@ function modelTombstoneFor(
 export function diffDailyModelUsage(
   incoming: DailyModelUsageObservationInput[],
   current: CurrentDailyModelUsageRow[],
-  coverage?: {
-    scopeStart?: string | null;
-    scopeEnd?: string | null;
-  },
+  coverage?: OverlapCoverage,
 ): ModelDiffSummary {
   const currentByKey = new Map(
     current.map((row) => [modelKeyOf(row), row] as const),
@@ -190,17 +213,21 @@ export function diffDailyModelUsage(
     projected.set(key, row);
   }
 
-  for (const existing of currentByKey.values()) {
-    const key = modelKeyOf(existing);
-    const coveredBySnapshot =
-      scopeStart !== null &&
-      scopeEnd !== null &&
-      existing.usage_date >= scopeStart &&
-      existing.usage_date <= scopeEnd;
+  // Same preservation rule as daily usage: missing model keys inside
+  // overlap do not produce tombstones without explicit opt-in.
+  if (coverage?.allowMissingAsRemoval === true) {
+    for (const existing of currentByKey.values()) {
+      const key = modelKeyOf(existing);
+      const coveredBySnapshot =
+        scopeStart !== null &&
+        scopeEnd !== null &&
+        existing.usage_date >= scopeStart &&
+        existing.usage_date <= scopeEnd;
 
-    if (coveredBySnapshot && !incomingKeys.has(key)) {
-      removedRows.push(modelTombstoneFor(existing));
-      projected.delete(key);
+      if (coveredBySnapshot && !incomingKeys.has(key)) {
+        removedRows.push(modelTombstoneFor(existing));
+        projected.delete(key);
+      }
     }
   }
 

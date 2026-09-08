@@ -45,7 +45,8 @@ async function ImportsRuntime() {
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
           Same-machine exact datasets are skipped, overlapping days are diffed,
-          and only canonical changes are promoted.
+          and only canonical changes are promoted. Overlapping snapshots revise
+          observed rows but do not delete historical rows by omission.
         </p>
       </header>
 
