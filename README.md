@@ -19,9 +19,10 @@ consumption across several development machines without double-counting overlapp
 - Strictly decode UTF-8, reject future-dated telemetry, and require every per-agent
   token category plus ccusage's top-level daily totals to reconcile before promotion.
 - Compare each machine × agent × date with the current accepted observation.
-- Insert immutable new/revised/removal observation versions, including tombstones
-  when an agent or an entire previously-observed day disappears inside the covered
-  overlap.
+- Insert immutable new/revised observation versions. Overlapping snapshots
+  revise explicitly observed rows but do not delete historical rows by
+  omission: ccusage snapshot absence is not deletion evidence. Tombstones
+  require explicit deletion evidence or an explicit repair/unimport operation.
 - Keep revision identity per import so a state can safely change A → B → A.
 - Preserve full per-machine truth while excluding only proven mirrored daily rows
   from the all-machines dashboard.

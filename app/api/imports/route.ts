@@ -557,12 +557,17 @@ export async function POST(request: Request) {
       ? expectedOverlapStart
       : parsed.scopeStart;
 
+  // ccusage snapshot absence is not deletion evidence: overlapping
+  // snapshots revise explicitly observed rows but never delete historical
+  // rows by omission. Tombstones require explicit deletion evidence, so
+  // normal imports reconcile with allowMissingAsRemoval disabled.
   const diff = diffDailyUsage(
     parsed.rows,
     (currentData ?? []) as CurrentDailyUsageRow[],
     {
       scopeStart: coverageStart,
       scopeEnd: parsed.scopeEnd,
+      allowMissingAsRemoval: false,
     },
   );
   const rowsToWrite = [
@@ -577,6 +582,7 @@ export async function POST(request: Request) {
     {
       scopeStart: coverageStart,
       scopeEnd: parsed.scopeEnd,
+      allowMissingAsRemoval: false,
     },
   );
   const modelRowsToWrite = [
