@@ -368,3 +368,39 @@ export function isRefreshCooldown(nowMs: number, latestObservedAtMs: number | nu
   if (latestObservedAtMs == null) return false;
   return nowMs - latestObservedAtMs < V2_REFRESH_COOLDOWN_MS;
 }
+
+
+/**
+ * Apply the manual-refresh cooldown only when the latest provider observation
+ * belongs to the active contract window. A recent prior-cycle snapshot must
+ * never block the first provider reading for a newly imported monthly plan.
+ *
+ * Contract-window semantics intentionally match buildV2View:
+ * trackingStartMs <= observedAtMs < resetAtMs.
+ *
+ * Without a valid contract window we preserve the legacy global cooldown.
+ */
+export function isRefreshCooldownForContract(args: {
+  nowMs: number;
+  latestObservedAtMs: number | null;
+  contractWindow: { trackingStartMs: number; resetAtMs: number } | null;
+}): boolean {
+  const { nowMs, latestObservedAtMs, contractWindow } = args;
+  if (latestObservedAtMs == null) return false;
+
+  if (
+    contractWindow &&
+    Number.isFinite(contractWindow.trackingStartMs) &&
+    Number.isFinite(contractWindow.resetAtMs) &&
+    contractWindow.resetAtMs > contractWindow.trackingStartMs
+  ) {
+    if (
+      latestObservedAtMs < contractWindow.trackingStartMs ||
+      latestObservedAtMs >= contractWindow.resetAtMs
+    ) {
+      return false;
+    }
+  }
+
+  return isRefreshCooldown(nowMs, latestObservedAtMs);
+}
