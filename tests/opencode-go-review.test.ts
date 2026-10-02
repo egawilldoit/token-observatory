@@ -104,7 +104,8 @@ describe("OpenCode Go review hardening", () => {
     const parsed = parseOpenCodeGoWorkbook(buildExcelWallClockWorkbook());
 
     assert.equal(new Date(parsed.trackingStartMs).toISOString(), "2026-08-30T21:29:00.000Z");
-    assert.equal(new Date(parsed.resetAtMs).toISOString(), "2026-09-29T10:29:00.000Z");
+    // Morocco ended DST on 2026-09-20, so Sep 29 Casablanca wall time is UTC.
+    assert.equal(new Date(parsed.resetAtMs).toISOString(), "2026-09-29T11:29:00.000Z");
     assert.equal(parsed.checkpoints.length, 29);
     assert.equal(parsed.checkpoints[0]?.date, "2026-08-31");
     assert.equal(parsed.checkpoints[28]?.date, "2026-09-28");
