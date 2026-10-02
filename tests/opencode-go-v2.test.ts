@@ -27,6 +27,7 @@ import {
   getActiveContractState,
   getFreshness,
   isRefreshCooldown,
+  isRefreshCooldownForContract,
   shouldAutoRefresh,
   shouldStoreProviderSnapshot,
   type V2Contract,
@@ -850,6 +851,51 @@ describe("v2 snapshot and refresh rules", () => {
     assert.equal(isRefreshCooldown(nowMs, nowMs - 1000), true);
     assert.equal(isRefreshCooldown(nowMs, nowMs - V2_REFRESH_COOLDOWN_MS), false);
     assert.ok(V2_REFRESH_COOLDOWN_MS >= 30000 && V2_REFRESH_COOLDOWN_MS <= 60000);
+  });
+
+  it("does not let a prior-cycle snapshot block the first refresh of a new contract", () => {
+    const nowMs = Date.parse("2026-10-02T11:38:54.000Z");
+    const contractStartMs = Date.parse("2026-10-02T10:36:00.000Z");
+    const contractResetMs = Date.parse("2026-10-29T10:29:00.000Z");
+
+    // A recent snapshot from the previous contract must not trigger the 45s
+    // cooldown for the new contract's first provider reading.
+    assert.equal(
+      isRefreshCooldownForContract({
+        nowMs,
+        latestObservedAtMs: contractStartMs - 10_000,
+        contractWindow: { trackingStartMs: contractStartMs, resetAtMs: contractResetMs },
+      }),
+      false,
+    );
+
+    // Once the new contract has an in-window snapshot, normal cooldown applies.
+    assert.equal(
+      isRefreshCooldownForContract({
+        nowMs,
+        latestObservedAtMs: nowMs - 10_000,
+        contractWindow: { trackingStartMs: contractStartMs, resetAtMs: contractResetMs },
+      }),
+      true,
+    );
+
+    // Contract start is inclusive; reset is exclusive, matching buildV2View.
+    assert.equal(
+      isRefreshCooldownForContract({
+        nowMs: contractStartMs + 1_000,
+        latestObservedAtMs: contractStartMs,
+        contractWindow: { trackingStartMs: contractStartMs, resetAtMs: contractResetMs },
+      }),
+      true,
+    );
+    assert.equal(
+      isRefreshCooldownForContract({
+        nowMs: contractResetMs,
+        latestObservedAtMs: contractResetMs,
+        contractWindow: { trackingStartMs: contractStartMs, resetAtMs: contractResetMs },
+      }),
+      false,
+    );
   });
 
   function stubClient(rows: Record<string, unknown>[], inserted: Record<string, unknown>[]) {
