@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { getObservatoryAccess } from "@/lib/auth/require-user";
-import { V2_REFRESH_COOLDOWN_MS } from "@/lib/opencode-go/comparison";
+import {
+  V2_REFRESH_COOLDOWN_MS,
+  isRefreshCooldownForContract,
+} from "@/lib/opencode-go/comparison";
 import { providerErrorMessage } from "@/lib/opencode-go/provider-schema";
 import { getLatestProviderSnapshot, listProviderSnapshots } from "@/lib/opencode-go/provider-queries";
 import { getActiveOpenCodeGoSnapshot } from "@/lib/opencode-go/queries";
@@ -44,7 +47,8 @@ async function currentView(supabase: ReturnType<typeof createAdminClient>, nowMs
 /**
  * V2 manual refresh (server-side live fetch).
  * - Auth + allowlist + same-origin required.
- * - Backend cooldown ~45s: recent snapshots return 429 with cached state.
+ * - Backend cooldown ~45s: recent in-contract snapshots return 429 with cached state.
+ *   Prior-cycle snapshots never block the first refresh of a new contract.
  * - On provider failure the last successful snapshot is preserved and
  *   returned with a sanitized message (no secret, no upstream body).
  */
@@ -67,15 +71,36 @@ export async function POST(request: Request) {
   const nowMs = Date.now();
 
   let latest: Awaited<ReturnType<typeof getLatestProviderSnapshot>>;
+  let active: Awaited<ReturnType<typeof getActiveOpenCodeGoSnapshot>>;
   try {
-    latest = await getLatestProviderSnapshot(supabase);
+    [latest, active] = await Promise.all([
+      getLatestProviderSnapshot(supabase),
+      getActiveOpenCodeGoSnapshot(supabase),
+    ]);
   } catch {
     return NextResponse.json({ error: "Could not read provider observations." }, { status: 500 });
   }
 
   if (latest) {
-    const ageMs = nowMs - Date.parse(latest.observed_at);
-    if (ageMs < V2_REFRESH_COOLDOWN_MS) {
+    const latestObservedAtMs = Date.parse(latest.observed_at);
+    const trackingStartMs = active ? Date.parse(active.tracking_start as string) : Number.NaN;
+    const resetAtMs = active ? Date.parse(active.reset_at as string) : Number.NaN;
+    const contractWindow =
+      active &&
+      Number.isFinite(trackingStartMs) &&
+      Number.isFinite(resetAtMs) &&
+      resetAtMs > trackingStartMs
+        ? { trackingStartMs, resetAtMs }
+        : null;
+
+    if (
+      isRefreshCooldownForContract({
+        nowMs,
+        latestObservedAtMs: Number.isFinite(latestObservedAtMs) ? latestObservedAtMs : null,
+        contractWindow,
+      })
+    ) {
+      const ageMs = nowMs - latestObservedAtMs;
       const view = await currentView(supabase, nowMs);
       const retryAfterSeconds = Math.max(1, Math.ceil((V2_REFRESH_COOLDOWN_MS - ageMs) / 1000));
       return NextResponse.json(
