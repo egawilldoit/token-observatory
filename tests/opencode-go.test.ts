@@ -126,7 +126,7 @@ describe("opencode-go pacing calculations", () => {
     );
   });
 
-  it("recomputes the Sep 5 checkpoint ceiling to approximately 22.7278%", () => {
+  it("recomputes the Sep 5 checkpoint ceiling across the Sep 20 Casablanca offset change", () => {
     const t = casablancaWallToInstant("2026-09-05", "12:00");
     const ceiling = checkpointCeiling({
       checkpointMs: t,
@@ -136,8 +136,8 @@ describe("opencode-go pacing calculations", () => {
       plannedCeilingValue: 1.0,
     });
     assert.ok(
-      Math.abs(ceiling - 0.2272776681) < 1e-6,
-      `Sep 5 ceiling ${ceiling} should be ≈ 0.2272776681`,
+      Math.abs(ceiling - 0.2270251643) < 1e-6,
+      `Sep 5 ceiling ${ceiling} should be ≈ 0.2270251643 with the Sep 20 timezone change`,
     );
   });
 
